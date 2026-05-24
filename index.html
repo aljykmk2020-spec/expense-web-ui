@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>記帳管理後台</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
+.topbar{background:#fff;border-bottom:1px solid #e5e5e0;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:8px;font-weight:500;font-size:14px}
+.logo-icon{width:26px;height:26px;border-radius:7px;background:#e6f1fb;display:flex;align-items:center;justify-content:center}
+.btn{border:1px solid #ddd;background:#fff;color:#333;border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:#f5f5f5}
+.btn-primary{background:#e6f1fb;border-color:#b5d4f4;color:#185fa5}
+.btn-primary:hover{background:#d0e8f8}
+.btn-danger{background:#fcebeb;border-color:#f7c1c1;color:#a32d2d}
+.main{padding:20px;max-width:1000px;margin:0 auto}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.stat-card{background:#ebebeb;border-radius:8px;padding:12px 14px}
+.stat-label{font-size:12px;color:#666;margin-bottom:4px}
+.stat-value{font-size:20px;font-weight:500}
+.stat-sub{font-size:11px;color:#999;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel{background:#fff;border:1px solid #e5e5e0;border-radius:12px;overflow:hidden;margin-bottom:20px}
+.panel-header{padding:12px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e5e5e0}
+.panel-title{font-size:14px;font-weight:500}
+.filter-row{padding:10px 18px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #e5e5e0;flex-wrap:wrap}
+.filter-row select,.filter-row input{border:1px solid #ddd;background:#f9f9f9;color:#333;border-radius:8px;padding:5px 9px;font-size:13px;outline:none}
+.fl{font-size:12px;color:#999}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{font-size:12px;color:#666;font-weight:500;text-align:left;padding:9px 14px;border-bottom:1px solid #e5e5e0;white-space:nowrap}
+td{font-size:13px;padding:10px 14px;border-bottom:1px solid #f0f0f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafafa}
+.col-date{width:88px}.col-cat{width:72px}.col-merchant{width:auto}.col-item{width:100px}.col-card{width:130px}.col-amt{width:80px;text-align:right}.col-act{width:64px;text-align:right}
+.amount{font-weight:500}
+.badge{display:inline-flex;align-items:center;font-size:11px;padding:2px 7px;border-radius:20px}
+.b-餐飲{background:#e1f5ee;color:#0f6e56}.b-交通{background:#e6f1fb;color:#185fa5}.b-購物{background:#faeeda;color:#854f0b}.b-訂閱{background:#eeedfe;color:#534ab7}.b-健康{background:#fcebeb;color:#a32d2d}.b-貸款{background:#faeeda;color:#993c1d}.b-投資{background:#eaf3de;color:#3b6d11}.b-其他{background:#f1efe8;color:#5f5e5a}
+.row-actions{display:flex;justify-content:flex-end;gap:3px;opacity:0}
+tr:hover .row-actions{opacity:1}
+.icon-btn{border:1px solid #e5e5e0;background:none;color:#666;border-radius:6px;width:26px;height:26px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+.icon-btn:hover{background:#f5f5f5;color:#333}
+.icon-btn.danger:hover{background:#fcebeb;color:#a32d2d}
+.pagination{padding:10px 18px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #e5e5e0}
+.page-info{font-size:12px;color:#666}
+.page-btns{display:flex;gap:4px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;padding-top:60px;z-index:200}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:20px;width:440px;max-width:calc(100vw - 32px)}
+.modal-title{font-size:14px;font-weight:500;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.form-group{margin-bottom:12px}
+.form-label{font-size:12px;color:#666;display:block;margin-bottom:4px}
+.form-input{width:100%;border:1px solid #ddd;background:#f9f9f9;color:#333;border-radius:8px;padding:7px 10px;font-size:13px;outline:none}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-footer{display:flex;justify-content:flex-end;gap:6px;margin-top:16px}
+.confirm-dialog{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:20px;width:340px}
+.toast{position:fixed;bottom:20px;right:20px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:7px;box-shadow:0 4px 12px rgba(0,0,0,.1);opacity:0;transform:translateY(6px);transition:all .22s;pointer-events:none;z-index:300}
+.toast.show{opacity:1;transform:translateY(0)}
+.login-wrap{max-width:360px;margin:80px auto;padding:0 20px}
+.login-card{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:24px}
+.status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:#1d9e75}
+.dot-err{background:#e24b4a}
+@media(max-width:600px){.stat-row{grid-template-columns:1fr 1fr}.col-card,.col-item{display:none}.main{padding:12px}}
+</style>
+</head>
+<body>
+
+<div id="login-screen" style="display:none">
+  <div class="login-wrap">
+    <div class="login-card">
+      <p style="font-size:15px;font-weight:500;margin-bottom:6px"><i class="ti ti-wallet"></i> 記帳管理後台</p>
+      <p style="font-size:13px;color:#666;margin-bottom:18px">請輸入連線設定</p>
+      <div class="form-group">
+        <label class="form-label">Render 服務網址</label>
+        <input class="form-input" id="login-url" placeholder="https://line-expense-bot-docker.onrender.com" type="text">
+      </div>
+      <div class="form-group">
+        <label class="form-label">API Token（WEB_API_TOKEN）</label>
+        <input class="form-input" id="login-token" placeholder="貼入你的 token" type="password">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px" onclick="doLogin()">
+        <i class="ti ti-login"></i> 登入
+      </button>
+      <p id="login-err" style="font-size:12px;color:#a32d2d;margin-top:10px;display:none"></p>
+    </div>
+  </div>
+</div>
+
+<div id="app-screen" style="display:none">
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-icon"><i class="ti ti-wallet" style="font-size:14px;color:#185fa5"></i></div>
+      記帳管理後台
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;color:#999" id="conn-status"><span class="status-dot"></span>已連線</span>
+      <button class="btn" onclick="loadData()"><i class="ti ti-refresh"></i></button>
+      <button class="btn btn-primary" onclick="openAddModal()"><i class="ti ti-plus"></i> 新增</button>
+      <button class="btn" onclick="doLogout()"><i class="ti ti-logout"></i></button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">本月支出</div><div class="stat-value" id="s-total">—</div><div class="stat-sub" id="s-month">—</div></div>
+      <div class="stat-card"><div class="stat-label">筆數</div><div class="stat-value" id="s-count">—</div><div class="stat-sub">本月記錄</div></div>
+      <div class="stat-card"><div class="stat-label">日均支出</div><div class="stat-value" id="s-daily">—</div><div class="stat-sub">已過天數計算</div></div>
+      <div class="stat-card"><div class="stat-label">最高單筆</div><div class="stat-value" id="s-max">—</div><div class="stat-sub" id="s-max-desc">—</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">支出記錄</span>
+        <span style="font-size:12px;color:#999"><i class="ti ti-table"></i> Google Sheets</span>
+      </div>
+      <div class="filter-row">
+        <span class="fl">月份</span><select id="f-month" onchange="applyFilters()"></select>
+        <span class="fl">分類</span>
+        <select id="f-cat" onchange="applyFilters()">
+          <option value="">全部</option>
+          <option>餐飲</option><option>交通</option><option>購物</option>
+          <option>訂閱</option><option>健康</option><option>貸款</option>
+          <option>投資</option><option>其他</option>
+        </select>
+        <span class="fl">付款</span>
+        <select id="f-pay" onchange="applyFilters()">
+          <option value="">全部</option>
+          <option value="cash">現金</option>
+          <option value="credit_card">信用卡</option>
+          <option value="scheduled">定期</option>
+        </select>
+        <input type="text" id="f-search" placeholder="搜尋商家或品項..." style="flex:1;min-width:110px" oninput="applyFilters()">
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-date">日期</th>
+            <th class="col-cat">分類</th>
+            <th class="col-merchant">商家</th>
+            <th class="col-item">品項</th>
+            <th class="col-card">卡片</th>
+            <th class="col-amt">金額</th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="expense-tbody">
+          <tr><td colspan="7" style="text-align:center;padding:32px;color:#999">載入中...</td></tr>
+        </tbody>
+      </table>
+      <div class="pagination">
+        <span class="page-info" id="page-info">—</span>
+        <div class="page-btns">
+          <button class="btn" id="btn-prev" onclick="changePage(-1)"><i class="ti ti-chevron-left"></i></button>
+          <button class="btn" id="btn-next" onclick="changePage(1)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:11px;color:#999;text-align:center;padding-bottom:20px">資料來源：Google Sheets｜刪除為軟刪除，資料仍保留於 Sheets</p>
+  </div>
+</div>
+
+<div class="modal-bg" id="edit-modal" onclick="closeBg(event,'edit-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">
+      <span id="modal-label">編輯記帳</span>
+      <button class="icon-btn" onclick="closeModal('edit-modal')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">日期</label><input class="form-input" type="date" id="e-date"></div>
+      <div class="form-group"><label class="form-label">金額（NT$）</label><input class="form-input" type="number" id="e-amount"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">商家</label><input class="form-input" type="text" id="e-merchant" placeholder="Uber Eats、全家..."></div>
+      <div class="form-group"><label class="form-label">品項</label><input class="form-input" type="text" id="e-item" placeholder="午餐、飲料..."></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">分類</label>
+        <select class="form-input" id="e-cat">
+          <option>餐飲</option><option>交通</option><option>購物</option>
+          <option>訂閱</option><option>健康</option><option>貸款</option>
+          <option>投資</option><option>其他</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">付款方式</label>
+        <select class="form-input" id="e-pay">
+          <option value="cash">現金</option>
+          <option value="credit_card">信用卡</option>
+          <option value="scheduled">定期</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">卡片名稱</label><input class="form-input" type="text" id="e-card" placeholder="國泰CUBE、星展傳說對決聯名卡..."></div>
+    <div class="form-group"><label class="form-label">備註</label><input class="form-input" type="text" id="e-note" placeholder="選填"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('edit-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveRecord()"><i class="ti ti-device-floppy"></i> 儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="confirm-modal" onclick="closeBg(event,'confirm-modal')">
+  <div class="confirm-dialog" onclick="event.stopPropagation()">
+    <p style="font-size:14px;font-weight:500;margin-bottom:8px">確認刪除</p>
+    <p style="font-size:13px;color:#666;margin-bottom:18px" id="confirm-msg">確定要刪除這筆記帳嗎？</p>
+    <div style="display:flex;justify-content:flex-end;gap:6px">
+      <button class="btn" onclick="closeModal('confirm-modal')">取消</button>
+      <button class="btn btn-danger" id="confirm-ok"><i class="ti ti-trash"></i> 刪除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i class="ti" id="toast-icon"></i><span id="toast-msg">完成</span></div>
+
+<script>
+let API_BASE='',TOKEN='',allRecords=[],filtered=[],currentPage=1,editingId=null;
+const PER_PAGE=20;
+
+function init(){
+  const s=localStorage.getItem('expense_config');
+  if(s){try{const c=JSON.parse(s);API_BASE=c.url||'';TOKEN=c.token||'';if(API_BASE&&TOKEN){showApp();return;}}catch(e){}}
+  showLogin();
+}
+function showLogin(){document.getElementById('login-screen').style.display='block';document.getElementById('app-screen').style.display='none';}
+function showApp(){document.getElementById('login-screen').style.display='none';document.getElementById('app-screen').style.display='block';buildMonthOptions();loadData();}
+
+async function doLogin(){
+  const url=document.getElementById('login-url').value.trim().replace(/\/$/,'');
+  const token=document.getElementById('login-token').value.trim();
+  const err=document.getElementById('login-err');
+  err.style.display='none';
+  if(!url||!token){err.textContent='請填寫網址與 Token。';err.style.display='block';return;}
+  try{
+    const r=await fetch(`${url}/api/expenses?per_page=1`,{headers:{'Authorization':`Bearer ${token}`}});
+    if(r.status===401){err.textContent='Token 錯誤。';err.style.display='block';return;}
+    if(!r.ok){err.textContent=`伺服器回應 ${r.status}。`;err.style.display='block';return;}
+    API_BASE=url;TOKEN=token;
+    localStorage.setItem('expense_config',JSON.stringify({url,token}));
+    showApp();
+  }catch(e){err.textContent='無法連線：'+e.message;err.style.display='block';}
+}
+function doLogout(){localStorage.removeItem('expense_config');API_BASE='';TOKEN='';allRecords=[];filtered=[];showLogin();}
+function h(){return{'Authorization':`Bearer ${TOKEN}`,'Content-Type':'application/json'};}
+
+function buildMonthOptions(){
+  const sel=document.getElementById('f-month');sel.innerHTML='';
+  const now=new Date();
+  for(let i=0;i<12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const val=d.toISOString().slice(0,7);
+    const opt=document.createElement('option');
+    opt.value=val;opt.textContent=`${d.getFullYear()}年${d.getMonth()+1}月`;
+    if(i===0)opt.selected=true;
+    sel.appendChild(opt);
+  }
+}
+
+async function loadData(){
+  document.getElementById('expense-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#999">載入中...</td></tr>';
+  try{
+    const r=await fetch(`${API_BASE}/api/expenses?per_page=200`,{headers:h()});
+    if(!r.ok)throw new Error(r.status);
+    const data=await r.json();
+    allRecords=data.records||[];
+    document.getElementById('conn-status').innerHTML='<span class="status-dot"></span>已連線';
+    applyFilters();
+  }catch(e){
+    document.getElementById('conn-status').innerHTML='<span class="status-dot dot-err"></span>連線失敗';
+    document.getElementById('expense-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#a32d2d">無法連線，請點重新整理</td></tr>';
+  }
+}
+
+function applyFilters(){
+  const month=document.getElementById('f-month').value;
+  const cat=document.getElementById('f-cat').value;
+  const pay=document.getElementById('f-pay').value;
+  const q=document.getElementById('f-search').value.toLowerCase();
+  filtered=allRecords.filter(r=>{
+    if(month&&!r.date?.startsWith(month))return false;
+    if(cat&&r.category!==cat)return false;
+    if(pay&&r.payment_type!==pay)return false;
+    if(q&&!r.merchant?.toLowerCase().includes(q)&&!r.item?.toLowerCase().includes(q))return false;
+    return true;
+  });
+  currentPage=1;renderTable();updateStats();
+}
+
+function renderTable(){
+  const tbody=document.getElementById('expense-tbody');
+  const start=(currentPage-1)*PER_PAGE;
+  const page=filtered.slice(start,start+PER_PAGE);
+  if(!page.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:36px;color:#999">沒有符合條件的記錄</td></tr>';document.getElementById('page-info').textContent='共 0 筆';return;}
+  tbody.innerHTML=page.map(r=>{
+    const bc='b-'+(r.category||'其他');
+    const cardOrPay=r.card_name||(r.payment_type==='cash'?'現金':r.payment_type==='scheduled'?'定期':'刷卡');
+    return`<tr>
+      <td class="col-date" style="color:#666">${r.date?.slice(5)||''}</td>
+      <td class="col-cat"><span class="badge ${bc}">${esc(r.category||'')}</span></td>
+      <td class="col-merchant">${esc(r.merchant||r.item||'—')}</td>
+      <td class="col-item" style="color:#666">${esc(r.item||'—')}</td>
+      <td class="col-card" style="color:#666;font-size:12px">${esc(cardOrPay)}</td>
+      <td class="col-amt"><span class="amount">$${Math.round(r.amount||0).toLocaleString()}</span></td>
+      <td class="col-act"><div class="row-actions">
+        <button class="icon-btn" onclick="openEdit('${r.record_id}')" title="編輯"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn danger" onclick="confirmDel('${r.record_id}')" title="刪除"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  const total=filtered.length,pages=Math.ceil(total/PER_PAGE);
+  document.getElementById('page-info').textContent=`第 ${start+1}–${Math.min(start+PER_PAGE,total)} 筆，共 ${total} 筆`;
+  document.getElementById('btn-prev').disabled=currentPage<=1;
+  document.getElementById('btn-next').disabled=currentPage>=pages;
+}
+
+function updateStats(){
+  const month=document.getElementById('f-month').value;
+  const mr=allRecords.filter(r=>r.date?.startsWith(month));
+  const total=mr.reduce((s,r)=>s+(r.amount||0),0);
+  const day=new Date().toISOString().slice(0,7)===month?new Date().getDate():new Date(month+'-28').getDate();
+  const maxR=mr.reduce((m,r)=>(r.amount||0)>(m.amount||0)?r:m,{});
+  const [y,mo]=month.split('-');
+  document.getElementById('s-total').textContent='$'+Math.round(total).toLocaleString();
+  document.getElementById('s-month').textContent=`${y}年${parseInt(mo)}月`;
+  document.getElementById('s-count').textContent=mr.length;
+  document.getElementById('s-daily').textContent='$'+Math.round(total/Math.max(day,1)).toLocaleString();
+  document.getElementById('s-max').textContent=maxR.amount?'$'+Math.round(maxR.amount).toLocaleString():'—';
+  document.getElementById('s-max-desc').textContent=maxR.merchant||maxR.item||'—';
+}
+
+function changePage(d){const pages=Math.ceil(filtered.length/PER_PAGE);currentPage=Math.max(1,Math.min(pages,currentPage+d));renderTable();}
+
+function openAddModal(){
+  editingId=null;
+  document.getElementById('modal-label').textContent='新增記帳';
+  document.getElementById('e-date').value=new Date().toISOString().slice(0,10);
+  ['e-amount','e-merchant','e-item','e-card','e-note'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('e-cat').value='餐飲';
+  document.getElementById('e-pay').value='cash';
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function openEdit(id){
+  const r=allRecords.find(x=>x.record_id===id);if(!r)return;
+  editingId=id;
+  document.getElementById('modal-label').textContent='編輯記帳';
+  document.getElementById('e-date').value=r.date||'';
+  document.getElementById('e-amount').value=r.amount||'';
+  document.getElementById('e-merchant').value=r.merchant||'';
+  document.getElementById('e-item').value=r.item||'';
+  document.getElementById('e-cat').value=r.category||'其他';
+  document.getElementById('e-pay').value=r.payment_type||'cash';
+  document.getElementById('e-card').value=r.card_name||'';
+  document.getElementById('e-note').value=r.note||'';
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+async function saveRecord(){
+  const date=document.getElementById('e-date').value;
+  const amount=parseFloat(document.getElementById('e-amount').value);
+  const merchant=document.getElementById('e-merchant').value.trim();
+  const item=document.getElementById('e-item').value.trim();
+  if(!date||!amount||(!merchant&&!item)){showToast('請填寫日期、金額，以及商家或品項','err');return;}
+  const payload={date,amount,category:document.getElementById('e-cat').value,merchant,item,payment_type:document.getElementById('e-pay').value,card_name:document.getElementById('e-card').value.trim(),note:document.getElementById('e-note').value.trim()};
+  try{
+    const r=await fetch(editingId?`${API_BASE}/api/expenses/${editingId}`:`${API_BASE}/api/expenses`,{method:editingId?'PUT':'POST',headers:h(),body:JSON.stringify(payload)});
+    if(!r.ok){const e=await r.json();showToast(e.details?.join('、')||e.error||'儲存失敗','err');return;}
+    closeModal('edit-modal');await loadData();showToast(editingId?'已儲存修改':'已新增記帳');
+  }catch(e){showToast('連線失敗','err');}
+}
+
+function confirmDel(id){
+  const r=allRecords.find(x=>x.record_id===id);if(!r)return;
+  document.getElementById('confirm-msg').textContent=`確定要刪除「${r.merchant||r.item||'這筆'} $${Math.round(r.amount||0).toLocaleString()}」嗎？`;
+  document.getElementById('confirm-ok').onclick=()=>doDelete(id);
+  document.getElementById('confirm-modal').classList.add('open');
+}
+
+async function doDelete(id){
+  closeModal('confirm-modal');
+  try{
+    const r=await fetch(`${API_BASE}/api/expenses/${id}`,{method:'DELETE',headers:h()});
+    if(!r.ok){showToast('刪除失敗','err');return;}
+    await loadData();showToast('已刪除（軟刪除，Sheets 仍保留記錄）');
+  }catch(e){showToast('連線失敗','err');}
+}
+
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function closeBg(e,id){if(e.target.id===id)closeModal(id);}
+function showToast(msg,type){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-icon').className='ti '+(type==='err'?'ti-alert-circle':'ti-circle-check');
+  document.getElementById('toast-msg').textContent=msg;
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+init();
+</script>
+</body>
+</html>
