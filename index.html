@@ -177,16 +177,22 @@ tr:hover .row-actions{opacity:1}
     <div class="form-row">
       <div class="form-group"><label class="form-label">分類</label>
         <select class="form-input" id="e-cat">
-          <option>餐飲</option><option>交通</option><option>購物</option>
-          <option>訂閱</option><option>健康</option><option>貸款</option>
-          <option>投資</option><option>其他</option>
+          <option>早餐</option><option>午餐</option><option>晚餐</option>
+          <option>飲料</option><option>小費</option><option>餐飲</option>
+          <option>購物</option><option>交通</option><option>生活</option>
+          <option>訂閱</option><option>健康</option><option>預定</option>
+          <option>貸款</option><option>投資</option><option>保險</option>
+          <option value="Google play">Google play</option><option>其他</option>
         </select>
       </div>
       <div class="form-group"><label class="form-label">付款方式</label>
         <select class="form-input" id="e-pay">
           <option value="cash">現金</option>
           <option value="credit_card">信用卡</option>
+          <option value="debit_card">金融卡</option>
+          <option value="bank_transfer">銀行轉帳</option>
           <option value="scheduled">定期</option>
+          <option value="investment">投資</option>
         </select>
       </div>
     </div>
@@ -206,6 +212,7 @@ tr:hover .row-actions{opacity:1}
           <option value="pending">pending</option>
           <option value="confirmed">confirmed</option>
           <option value="settled">settled</option>
+          <option value="scheduled">scheduled</option>
         </select>
       </div>
     </div>
@@ -260,6 +267,20 @@ async function doLogin(){
 function doLogout(){localStorage.removeItem('expense_config');API_BASE='';TOKEN='';allRecords=[];filtered=[];showLogin();}
 function h(){return{'Authorization':`Bearer ${TOKEN}`,'Content-Type':'application/json'};}
 
+function syncCategoryOptions(records){
+  const sel=document.getElementById('e-cat');
+  const existing=new Set([...sel.options].map(o=>o.value||o.text));
+  records.forEach(r=>{
+    const cat=r.category;
+    if(cat&&!existing.has(cat)){
+      const opt=document.createElement('option');
+      opt.value=cat;opt.textContent=cat;
+      sel.insertBefore(opt,sel.lastElementChild);
+      existing.add(cat);
+    }
+  });
+}
+
 function buildMonthOptions(){
   const sel=document.getElementById('f-month');sel.innerHTML='';
   const now=new Date();
@@ -280,6 +301,7 @@ async function loadData(){
     if(!r.ok)throw new Error(r.status);
     const data=await r.json();
     allRecords=data.records||[];
+    syncCategoryOptions(allRecords);
     document.getElementById('conn-status').innerHTML='<span class="status-dot"></span>已連線';
     applyFilters();
   }catch(e){
@@ -366,8 +388,18 @@ function openEdit(id){
   document.getElementById('e-amount').value=r.amount||'';
   document.getElementById('e-merchant').value=r.merchant||'';
   document.getElementById('e-item').value=r.item||'';
-  document.getElementById('e-cat').value=r.category||'其他';
-  document.getElementById('e-pay').value=r.payment_type||'cash';
+  const catSel=document.getElementById('e-cat');
+  if(r.category&&![...catSel.options].find(o=>(o.value||o.text)===r.category)){
+    const opt=document.createElement('option');opt.value=r.category;opt.textContent=r.category;
+    catSel.insertBefore(opt,catSel.lastElementChild);
+  }
+  catSel.value=r.category||'其他';
+  const paySel=document.getElementById('e-pay');
+  if(r.payment_type&&![...paySel.options].find(o=>o.value===r.payment_type)){
+    const opt=document.createElement('option');opt.value=r.payment_type;opt.textContent=r.payment_type;
+    paySel.appendChild(opt);
+  }
+  paySel.value=r.payment_type||'cash';
   document.getElementById('e-card').value=r.card_name||'';
   document.getElementById('e-vendor').value=r.vendor||'';
   document.getElementById('e-spending-month').value=r.spending_month||'';
