@@ -353,7 +353,7 @@ function renderTable(){
 }
 
 function updateStats(){
-  
+  const month=document.getElementById('f-month').value;
   const mr=allRecords.filter(r=>r.date?.startsWith(month));
   const total=mr.reduce((s,r)=>s+(r.amount||0),0);
   const day=new Date().toISOString().slice(0,7)===month?new Date().getDate():new Date(month+'-28').getDate();
