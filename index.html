@@ -115,7 +115,7 @@ tr:hover .row-actions{opacity:1}
         <span style="font-size:12px;color:#999"><i class="ti ti-table"></i> Google Sheets</span>
       </div>
       <div class="filter-row">
-        <span class="fl">月份</span><select id="f-month" onchange="loadData()"></select>
+        <span class="fl">月份</span><select id="f-month" onchange="applyFilters()"></select>
         <span class="fl">分類</span>
         <select id="f-cat" onchange="applyFilters()">
           <option value="">全部</option>
@@ -295,11 +295,9 @@ function buildMonthOptions(){
 }
 
 async function loadData(){
-  const month=document.getElementById('f-month').value;
   document.getElementById('expense-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#999">載入中...</td></tr>';
   try{
-    const url=`${API_BASE}/api/expenses?per_page=500`+(month?`&month=${month}`:``);
-    const r=await fetch(url,{headers:h()});
+    const r=await fetch(`${API_BASE}/api/expenses?per_page=500`,{headers:h()});
     if(!r.ok)throw new Error(r.status);
     const data=await r.json();
     allRecords=data.records||[];
@@ -313,7 +311,7 @@ async function loadData(){
 }
 
 function applyFilters(){
-  const month=document.getElementById('f-month').value;
+  
   const cat=document.getElementById('f-cat').value;
   const pay=document.getElementById('f-pay').value;
   const q=document.getElementById('f-search').value.toLowerCase();
@@ -355,7 +353,7 @@ function renderTable(){
 }
 
 function updateStats(){
-  const month=document.getElementById('f-month').value;
+  
   const mr=allRecords.filter(r=>r.date?.startsWith(month));
   const total=mr.reduce((s,r)=>s+(r.amount||0),0);
   const day=new Date().toISOString().slice(0,7)===month?new Date().getDate():new Date(month+'-28').getDate();
