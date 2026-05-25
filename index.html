@@ -190,7 +190,25 @@ tr:hover .row-actions{opacity:1}
         </select>
       </div>
     </div>
-    <div class="form-group"><label class="form-label">卡片名稱</label><input class="form-input" type="text" id="e-card" placeholder="國泰CUBE、星展傳說對決聯名卡..."></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">卡片名稱</label><input class="form-input" type="text" id="e-card" placeholder="國泰CUBE、Pi錢包卡..."></div>
+      <div class="form-group"><label class="form-label">供應商／平台</label><input class="form-input" type="text" id="e-vendor" placeholder="選填"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">消費月份</label><input class="form-input" type="month" id="e-spending-month"></div>
+      <div class="form-group"><label class="form-label">帳單月份</label><input class="form-input" type="month" id="e-billing-month"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">結算月份</label><input class="form-input" type="month" id="e-settlement-month"></div>
+      <div class="form-group"><label class="form-label">狀態</label>
+        <select class="form-input" id="e-status">
+          <option value="">（預設）</option>
+          <option value="pending">pending</option>
+          <option value="confirmed">confirmed</option>
+          <option value="settled">settled</option>
+        </select>
+      </div>
+    </div>
     <div class="form-group"><label class="form-label">備註</label><input class="form-input" type="text" id="e-note" placeholder="選填"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('edit-modal')">取消</button>
@@ -333,9 +351,10 @@ function openAddModal(){
   editingId=null;
   document.getElementById('modal-label').textContent='新增記帳';
   document.getElementById('e-date').value=new Date().toISOString().slice(0,10);
-  ['e-amount','e-merchant','e-item','e-card','e-note'].forEach(id=>document.getElementById(id).value='');
+  ['e-amount','e-merchant','e-item','e-card','e-vendor','e-spending-month','e-billing-month','e-settlement-month','e-note'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('e-cat').value='餐飲';
   document.getElementById('e-pay').value='cash';
+  document.getElementById('e-status').value='';
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -350,6 +369,11 @@ function openEdit(id){
   document.getElementById('e-cat').value=r.category||'其他';
   document.getElementById('e-pay').value=r.payment_type||'cash';
   document.getElementById('e-card').value=r.card_name||'';
+  document.getElementById('e-vendor').value=r.vendor||'';
+  document.getElementById('e-spending-month').value=r.spending_month||'';
+  document.getElementById('e-billing-month').value=r.billing_month||'';
+  document.getElementById('e-settlement-month').value=r.settlement_month||'';
+  document.getElementById('e-status').value=r.status||'';
   document.getElementById('e-note').value=r.note||'';
   document.getElementById('edit-modal').classList.add('open');
 }
@@ -360,7 +384,7 @@ async function saveRecord(){
   const merchant=document.getElementById('e-merchant').value.trim();
   const item=document.getElementById('e-item').value.trim();
   if(!date||!amount||(!merchant&&!item)){showToast('請填寫日期、金額，以及商家或品項','err');return;}
-  const payload={date,amount,category:document.getElementById('e-cat').value,merchant,item,payment_type:document.getElementById('e-pay').value,card_name:document.getElementById('e-card').value.trim(),note:document.getElementById('e-note').value.trim()};
+  const payload={date,amount,category:document.getElementById('e-cat').value,merchant,item,payment_type:document.getElementById('e-pay').value,card_name:document.getElementById('e-card').value.trim(),vendor:document.getElementById('e-vendor').value.trim(),spending_month:document.getElementById('e-spending-month').value,billing_month:document.getElementById('e-billing-month').value,settlement_month:document.getElementById('e-settlement-month').value,status:document.getElementById('e-status').value,note:document.getElementById('e-note').value.trim()};
   try{
     const r=await fetch(editingId?`${API_BASE}/api/expenses/${editingId}`:`${API_BASE}/api/expenses`,{method:editingId?'PUT':'POST',headers:h(),body:JSON.stringify(payload)});
     if(!r.ok){const e=await r.json();showToast(e.details?.join('、')||e.error||'儲存失敗','err');return;}
@@ -379,7 +403,7 @@ async function doDelete(id){
   closeModal('confirm-modal');
   try{
     const r=await fetch(`${API_BASE}/api/expenses/${id}`,{method:'DELETE',headers:h()});
-    if(!r.ok){showToast('刪除失敗','err');return;}
+    if(!r.ok){const e=await r.json().catch(()=>({}));showToast(e.error||'刪除失敗','err');return;}
     await loadData();showToast('已刪除（軟刪除，Sheets 仍保留記錄）');
   }catch(e){showToast('連線失敗','err');}
 }
