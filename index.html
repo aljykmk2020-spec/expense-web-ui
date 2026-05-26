@@ -316,7 +316,7 @@ function applyFilters(){
   const pay=document.getElementById('f-pay').value;
   const q=document.getElementById('f-search').value.toLowerCase();
   filtered=allRecords.filter(r=>{
-    if(month&&!r.date?.startsWith(month))return false;
+    if(month){const mk=r.spending_month||(r.date?r.date.slice(0,7):'');if(mk!==month)return false;}
     if(cat&&r.category!==cat)return false;
     if(pay&&r.payment_type!==pay)return false;
     if(q&&!r.merchant?.toLowerCase().includes(q)&&!r.item?.toLowerCase().includes(q))return false;
@@ -354,7 +354,7 @@ function renderTable(){
 
 function updateStats(){
   const month=document.getElementById('f-month').value;
-  const mr=allRecords.filter(r=>r.date?.startsWith(month));
+  const mr=allRecords.filter(r=>{const mk=r.spending_month||(r.date?r.date.slice(0,7):'');return mk===month;});
   const total=mr.reduce((s,r)=>s+(r.amount||0),0);
   const day=new Date().toISOString().slice(0,7)===month?new Date().getDate():new Date(month+'-28').getDate();
   const maxR=mr.reduce((m,r)=>(r.amount||0)>(m.amount||0)?r:m,{});
