@@ -109,6 +109,21 @@ tr:hover .row-actions{opacity:1}
       <div class="stat-card"><div class="stat-label">最高單筆</div><div class="stat-value" id="s-max">—</div><div class="stat-sub" id="s-max-desc">—</div></div>
     </div>
 
+    <!-- Dashboard 圖表 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px" id="dashboard-row">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">近6個月支出趨勢</span></div>
+        <div style="padding:16px"><canvas id="chart-trend" height="180"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">本月分類比例</span></div>
+        <div style="padding:16px;display:flex;align-items:center;gap:16px">
+          <canvas id="chart-pie" width="160" height="160" style="flex-shrink:0"></canvas>
+          <div id="pie-legend" style="font-size:12px;line-height:1.8;color:#444"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">支出記錄</span>
@@ -331,7 +346,7 @@ function applyFilters(){
     if(q&&!r.merchant?.toLowerCase().includes(q)&&!r.item?.toLowerCase().includes(q))return false;
     return true;
   });
-  currentPage=1;renderTable();updateStats();
+  currentPage=1;renderTable();updateStats();drawDashboard();
 }
 
 function renderTable(){
@@ -376,7 +391,97 @@ function updateStats(){
   document.getElementById('s-max-desc').textContent=maxR.merchant||maxR.item||'—';
 }
 
-function changePage(d){const pages=Math.ceil(filtered.length/PER_PAGE);currentPage=Math.max(1,Math.min(pages,currentPage+d));renderTable();}
+function drawDashboard(){
+  drawTrend();
+  drawPie();
+}
+
+function drawTrend(){
+  const canvas=document.getElementById('chart-trend');
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  canvas.width=canvas.offsetWidth||400;
+  canvas.height=180;
+  const now=new Date();
+  const months=[];
+  const totals=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');
+    const key=`${y}-${m}`;
+    months.push(`${d.getMonth()+1}月`);
+    const sum=allRecords.filter(r=>parseMonthKey(r)===key).reduce((s,r)=>s+(Number(r.amount)||0),0);
+    totals.push(sum);
+  }
+  const W=canvas.width,H=canvas.height;
+  const pad={t:20,r:20,b:30,l:60};
+  const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
+  const max=Math.max(...totals,1);
+  ctx.clearRect(0,0,W,H);
+  // grid
+  ctx.strokeStyle='#e5e5e0';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+iH*(1-i/4);
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+iW,y);ctx.stroke();
+    ctx.fillStyle='#999';ctx.font='11px sans-serif';ctx.textAlign='right';
+    ctx.fillText('$'+Math.round(max*i/4/1000)+'k',pad.l-6,y+4);
+  }
+  // line
+  const pts=totals.map((v,i)=>({x:pad.l+iW*i/(months.length-1),y:pad.t+iH*(1-v/max)}));
+  // fill
+  ctx.beginPath();ctx.moveTo(pts[0].x,pad.t+iH);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x,pad.t+iH);ctx.closePath();
+  ctx.fillStyle='rgba(24,95,165,0.08)';ctx.fill();
+  // line stroke
+  ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle='#185fa5';ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
+  // dots & labels
+  pts.forEach((p,i)=>{
+    ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);
+    ctx.fillStyle='#185fa5';ctx.fill();
+    ctx.fillStyle='#444';ctx.font='11px sans-serif';ctx.textAlign='center';
+    ctx.fillText(months[i],p.x,H-8);
+    if(totals[i]>0){ctx.fillStyle='#185fa5';ctx.fillText('$'+Math.round(totals[i]/1000)+'k',p.x,p.y-10);}
+  });
+}
+
+function drawPie(){
+  const canvas=document.getElementById('chart-pie');
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  const month=document.getElementById('f-month').value;
+  const mr=allRecords.filter(r=>parseMonthKey(r)===month);
+  const catMap={};
+  mr.forEach(r=>{const c=r.category||'其他';catMap[c]=(catMap[c]||0)+(Number(r.amount)||0);});
+  const entries=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  const total=entries.reduce((s,[,v])=>s+v,0);
+  const colors=['#185fa5','#1D9E75','#BA7517','#993C1D','#534ab7','#3b6d11','#a32d2d','#5f5e5a','#0f6e56','#854f0b'];
+  const W=160,H=160,cx=80,cy=80,r=70;
+  ctx.clearRect(0,0,W,H);
+  if(total===0){ctx.fillStyle='#ccc';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();return;}
+  let angle=-Math.PI/2;
+  entries.forEach(([,v],i)=>{
+    const sweep=(v/total)*Math.PI*2;
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,angle,angle+sweep);ctx.closePath();
+    ctx.fillStyle=colors[i%colors.length];ctx.fill();
+    angle+=sweep;
+  });
+  // center hole
+  ctx.beginPath();ctx.arc(cx,cy,40,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+  // legend
+  const legend=document.getElementById('pie-legend');
+  if(legend){
+    legend.innerHTML=entries.slice(0,6).map(([c,v],i)=>`
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${colors[i%colors.length]};flex-shrink:0"></span>
+        <span>${c}</span>
+        <span style="color:#999;margin-left:auto">${Math.round(v/total*100)}%</span>
+      </div>`).join('');
+  }
+}
+
+const pages=Math.ceil(filtered.length/PER_PAGE);currentPage=Math.max(1,Math.min(pages,currentPage+d));renderTable();}
 
 function openAddModal(){
   editingId=null;
