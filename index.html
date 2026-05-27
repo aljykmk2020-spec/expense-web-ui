@@ -481,7 +481,7 @@ function drawPie(){
   }
 }
 
-const pages=Math.ceil(filtered.length/PER_PAGE);currentPage=Math.max(1,Math.min(pages,currentPage+d));renderTable();}
+function changePage(d){const pages=Math.ceil(filtered.length/PER_PAGE);currentPage=Math.max(1,Math.min(pages,currentPage+d));renderTable();}
 
 function openAddModal(){
   editingId=null;
