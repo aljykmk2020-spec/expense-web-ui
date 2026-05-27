@@ -286,7 +286,8 @@ function buildMonthOptions(){
   const now=new Date();
   for(let i=0;i<12;i++){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
-    const val=d.toISOString().slice(0,7);
+    const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');
+    const val=`${y}-${m}`;
     const opt=document.createElement('option');
     opt.value=val;opt.textContent=`${d.getFullYear()}年${d.getMonth()+1}月`;
     if(i===0)opt.selected=true;
@@ -310,13 +311,21 @@ async function loadData(){
   }
 }
 
+function parseMonthKey(r){
+  if(r.spending_month&&r.spending_month.match(/^\d{4}-\d{2}$/))return r.spending_month;
+  const d=r.date||'';
+  if(d.match(/^\d{4}-\d{2}/))return d.slice(0,7);
+  if(d.match(/^\d{4}\/\d{2}/))return d.slice(0,7).replace('/','-');
+  return '';
+}
+
 function applyFilters(){
   const month=document.getElementById('f-month').value;
   const cat=document.getElementById('f-cat').value;
   const pay=document.getElementById('f-pay').value;
   const q=document.getElementById('f-search').value.toLowerCase();
   filtered=allRecords.filter(r=>{
-    if(month){const mk=r.spending_month||(r.date?r.date.slice(0,7):'');if(mk!==month)return false;}
+    if(month&&parseMonthKey(r)!==month)return false;
     if(cat&&r.category!==cat)return false;
     if(pay&&r.payment_type!==pay)return false;
     if(q&&!r.merchant?.toLowerCase().includes(q)&&!r.item?.toLowerCase().includes(q))return false;
@@ -354,7 +363,7 @@ function renderTable(){
 
 function updateStats(){
   const month=document.getElementById('f-month').value;
-  const mr=allRecords.filter(r=>{const mk=r.spending_month||(r.date?r.date.slice(0,7):'');return mk===month;});
+  const mr=allRecords.filter(r=>parseMonthKey(r)===month);
   const total=mr.reduce((s,r)=>s+(r.amount||0),0);
   const day=new Date().toISOString().slice(0,7)===month?new Date().getDate():new Date(month+'-28').getDate();
   const maxR=mr.reduce((m,r)=>(r.amount||0)>(m.amount||0)?r:m,{});
