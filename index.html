@@ -103,9 +103,17 @@ tr:hover .row-actions{opacity:1}
 
   <div class="main">
     <div class="stat-row">
-      <div class="stat-card"><div class="stat-label">本月支出</div><div class="stat-value" id="s-total">—</div><div class="stat-sub" id="s-month">—</div></div>
-      <div class="stat-card"><div class="stat-label">筆數</div><div class="stat-value" id="s-count">—</div><div class="stat-sub">本月記錄</div></div>
-      <div class="stat-card"><div class="stat-label">日均支出</div><div class="stat-value" id="s-daily">—</div><div class="stat-sub">已過天數計算</div></div>
+      <div class="stat-card" style="border-left:3px solid #1d9e75">
+        <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#1d9e75;display:inline-block"></span>本月已付</div>
+        <div class="stat-value" id="s-paid">—</div>
+        <div class="stat-sub" id="s-paid-sub">billing_month ≤ 本月</div>
+      </div>
+      <div class="stat-card" style="border-left:3px solid #ba7517">
+        <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#ba7517;display:inline-block"></span>次月預計</div>
+        <div class="stat-value" id="s-next">—</div>
+        <div class="stat-sub" id="s-next-sub">billing_month = 下個月</div>
+      </div>
+      <div class="stat-card"><div class="stat-label">本月消費筆數</div><div class="stat-value" id="s-count">—</div><div class="stat-sub" id="s-month">本月記錄</div></div>
       <div class="stat-card"><div class="stat-label">最高單筆</div><div class="stat-value" id="s-max">—</div><div class="stat-sub" id="s-max-desc">—</div></div>
     </div>
 
@@ -357,12 +365,22 @@ function renderTable(){
   tbody.innerHTML=page.map(r=>{
     const bc='b-'+(r.category||'其他');
     const cardOrPay=r.card_name||(r.payment_type==='cash'?'現金':r.payment_type==='scheduled'?'定期':'刷卡');
+    // 計算 billing 標記
+    const month=document.getElementById('f-month').value;
+    const nmo=nextMonth(month);
+    const bm=r.billing_month||'';
+    let billingBadge='';
+    if(bm===nmo){
+      billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#faeeda;color:#854f0b">次月付</span>`;
+    } else if(bm && bm>nmo){
+      billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#eeedfe;color:#534ab7">遠期</span>`;
+    }
     return`<tr>
       <td class="col-date" style="color:#666">${r.date?.slice(5)||''}</td>
       <td class="col-cat"><span class="badge ${bc}">${esc(r.category||'')}</span></td>
       <td class="col-merchant">${esc(r.merchant||r.item||'—')}</td>
       <td class="col-item" style="color:#666">${esc(r.item||'—')}</td>
-      <td class="col-card" style="color:#666;font-size:12px">${esc(cardOrPay)}</td>
+      <td class="col-card" style="color:#666;font-size:12px">${esc(cardOrPay)}${billingBadge}</td>
       <td class="col-amt"><span class="amount">$${Math.round(r.amount||0).toLocaleString()}</span></td>
       <td class="col-act"><div class="row-actions">
         <button class="icon-btn" onclick="openEdit('${r.record_id}')" title="編輯"><i class="ti ti-edit"></i></button>
@@ -376,18 +394,54 @@ function renderTable(){
   document.getElementById('btn-next').disabled=currentPage>=pages;
 }
 
+function nextMonth(ym){
+  // 傳入 "2026-05"，回傳 "2026-06"
+  const [y,m]=ym.split('-').map(Number);
+  const nd=new Date(y,m,1); // m 已是 1-based，Date month 是 0-based，所以 m=next
+  return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
+}
+
 function updateStats(){
   const month=document.getElementById('f-month').value;
-  const mr=allRecords.filter(r=>parseMonthKey(r)===month);
-  const total=mr.reduce((s,r)=>s+(r.amount||0),0);
-  const day=new Date().toISOString().slice(0,7)===month?new Date().getDate():new Date(month+'-28').getDate();
-  const maxR=mr.reduce((m,r)=>(r.amount||0)>(m.amount||0)?r:m,{});
+  const nextMo=nextMonth(month);
   const [y,mo]=month.split('-');
-  document.getElementById('s-total').textContent='$'+Math.round(total).toLocaleString();
-  document.getElementById('s-month').textContent=`${y}年${parseInt(mo)}月`;
+
+  // 本月消費記錄（以 spending_month / date 判斷，不管帳單月份）
+  const mr=allRecords.filter(r=>parseMonthKey(r)===month);
+
+  // 本月已付：billing_month 為空、或 billing_month <= 本月 的消費記錄
+  // （空 billing_month 視為現金，當下已付）
+  const paidRecords=mr.filter(r=>{
+    const bm=r.billing_month||'';
+    if(!bm)return true;              // 空白 = 現金 = 已付
+    return bm<=month;                // billing_month 在本月以前（含）= 已付
+  });
+  const paidTotal=paidRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
+
+  // 次月預計：billing_month = 下個月 的消費記錄（本月刷卡、下月才繳）
+  const nextRecords=mr.filter(r=>(r.billing_month||'')=== nextMo);
+  const nextTotal=nextRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
+
+  // 未來更遠（billing_month > 下個月），暫不顯示在卡片，但納入筆數
+  const farRecords=mr.filter(r=>{
+    const bm=r.billing_month||'';
+    return bm && bm > nextMo;
+  });
+
+  // 最高單筆（全部本月消費）
+  const maxR=mr.reduce((m,r)=>(Number(r.amount)||0)>(Number(m.amount)||0)?r:m,{});
+
+  // 更新卡片
+  document.getElementById('s-paid').textContent='$'+Math.round(paidTotal).toLocaleString();
+  document.getElementById('s-paid-sub').textContent=`${paidRecords.length} 筆｜現金+本月結帳`;
+
+  document.getElementById('s-next').textContent=nextTotal>0?'$'+Math.round(nextTotal).toLocaleString():'$0';
+  const farNote=farRecords.length>0?`，另有 ${farRecords.length} 筆更遠期`:'';
+  document.getElementById('s-next-sub').textContent=`${nextRecords.length} 筆｜${y}年${parseInt(mo)+1>12?1:parseInt(mo)+1}月帳單${farNote}`;
+
   document.getElementById('s-count').textContent=mr.length;
-  document.getElementById('s-daily').textContent='$'+Math.round(total/Math.max(day,1)).toLocaleString();
-  document.getElementById('s-max').textContent=maxR.amount?'$'+Math.round(maxR.amount).toLocaleString():'—';
+  document.getElementById('s-month').textContent=`${y}年${parseInt(mo)}月`;
+  document.getElementById('s-max').textContent=maxR.amount?'$'+Math.round(Number(maxR.amount)).toLocaleString():'—';
   document.getElementById('s-max-desc').textContent=maxR.merchant||maxR.item||'—';
 }
 
