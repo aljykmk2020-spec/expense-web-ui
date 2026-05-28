@@ -439,6 +439,7 @@ function filterByBilling(type){
 function updateStats(){
   const month=document.getElementById('f-month').value;
   const nextMo=nextMonth(month);
+  const nmo=nextMo;
   const [y,mo]=month.split('-');
 
   // 本月消費記錄（以 spending_month / date 判斷，不管帳單月份）
