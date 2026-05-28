@@ -410,10 +410,14 @@ function filterByBilling(type){
   const month=document.getElementById('f-month').value;
   const nmo=nextMonth(month);
   let subset;
+  const SCHED=['scheduled','investment'];
   if(type==='paid'){
     subset=allRecords.filter(r=>{
       if(parseMonthKey(r)!==month)return false;
       const bm=r.billing_month||'';
+      const pt=r.payment_type||'cash';
+      if(SCHED.includes(pt))return false;
+      if(pt==='credit_card')return bm&&bm<=month;
       return !bm||bm<=month;
     });
   } else {
@@ -439,22 +443,34 @@ function updateStats(){
   // 本月消費記錄（以 spending_month / date 判斷，不管帳單月份）
   const mr=allRecords.filter(r=>parseMonthKey(r)===month);
 
-  // 本月已付：billing_month 為空、或 billing_month <= 本月 的消費記錄
-  // （空 billing_month 視為現金，當下已付）
+  // 本月已付／應付：
+  // - payment_type = cash/debit_card/bank_transfer/LINEPay 等非信用卡非定期，billing_month 空白或 <= 本月
+  // - payment_type = credit_card，billing_month <= 本月（有明確帳單月份才算）
+  // - payment_type = scheduled 一律排除（預定未付，不算已付）
+  const SCHEDULED_TYPES=['scheduled','investment'];
   const paidRecords=mr.filter(r=>{
     const bm=r.billing_month||'';
-    if(!bm)return true;              // 空白 = 現金 = 已付
-    return bm<=month;                // billing_month 在本月以前（含）= 已付
+    const pt=r.payment_type||'cash';
+    if(SCHEDULED_TYPES.includes(pt))return false;  // 定期/投資排除
+    if(pt==='credit_card'){
+      // 信用卡：必須有 billing_month 且 <= 本月才算應付
+      return bm && bm<=month;
+    }
+    // 現金/轉帳/電子支付等：billing_month 空白或 <= 本月
+    if(!bm)return true;
+    return bm<=month;
   });
   const paidTotal=paidRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
-  // 次月預計：billing_month = 下個月 的消費記錄（本月刷卡、下月才繳）
+  // 次月預計：billing_month = 下個月（含 scheduled 的遠期付款）
   const nextRecords=mr.filter(r=>(r.billing_month||'')=== nextMo);
   const nextTotal=nextRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
-  // 未來更遠（billing_month > 下個月），暫不顯示在卡片，但納入筆數
+  // 遠期預定：billing_month > 下個月，或 scheduled 但 billing_month 空白
   const farRecords=mr.filter(r=>{
     const bm=r.billing_month||'';
+    const pt=r.payment_type||'';
+    if(SCHEDULED_TYPES.includes(pt)&&!bm)return true;  // scheduled 但沒填 billing_month
     return bm && bm > nextMo;
   });
 
