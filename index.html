@@ -106,12 +106,12 @@ tr:hover .row-actions{opacity:1}
       <div class="stat-card" style="border-left:3px solid #1d9e75;cursor:pointer" onclick="filterByBilling('paid')" title="點擊查看明細">
         <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#1d9e75;display:inline-block"></span>本月已付／應付 <span style="font-size:10px;color:#999">▼點擊篩選</span></div>
         <div class="stat-value" id="s-paid">—</div>
-        <div class="stat-sub" id="s-paid-sub">settlement_month ≤ 本月</div>
+        <div class="stat-sub" id="s-paid-sub">billing_month ≤ 本月</div>
       </div>
       <div class="stat-card" style="border-left:3px solid #ba7517;cursor:pointer" onclick="filterByBilling('next')" title="點擊查看明細">
         <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#ba7517;display:inline-block"></span>次月預計 <span style="font-size:10px;color:#999">▼點擊篩選</span></div>
         <div class="stat-value" id="s-next">—</div>
-        <div class="stat-sub" id="s-next-sub">settlement_month = 下個月</div>
+        <div class="stat-sub" id="s-next-sub">billing_month = 下個月</div>
       </div>
       <div class="stat-card"><div class="stat-label">本月消費筆數</div><div class="stat-value" id="s-count">—</div><div class="stat-sub" id="s-month">本月記錄</div></div>
       <div class="stat-card"><div class="stat-label">最高單筆</div><div class="stat-value" id="s-max">—</div><div class="stat-sub" id="s-max-desc">—</div></div>
@@ -414,12 +414,11 @@ function filterByBilling(type){
   if(type==='paid'){
     subset=allRecords.filter(r=>{
       if(parseMonthKey(r)!==month)return false;
-      const sm=r.settlement_month||'';
       const bm=r.billing_month||'';
       const pt=r.payment_type||'cash';
       if(SCHED.includes(pt))return false;
-      if(pt==='credit_card'){const ref=sm||bm;return ref&&ref<=month;}
-      return !sm||sm<=month;
+      if(pt==='credit_card')return bm&&bm<=month;
+      return !bm||bm<=month;
     });
   } else {
     subset=allRecords.filter(r=>{
@@ -445,46 +444,36 @@ function updateStats(){
   // 本月消費記錄（以 spending_month / date 判斷，不管帳單月份）
   const mr=allRecords.filter(r=>parseMonthKey(r)===month);
 
-  // 本月已付／應付：用 settlement_month 判斷實際繳款月份
-  // - credit_card：settlement_month <= 本月（後端已正確計算）
-  // - cash/其他：settlement_month 空白或 <= 本月
+  // 本月已付／應付：用 billing_month 判斷
+  // - credit_card：billing_month <= 本月
+  // - cash/其他：billing_month 空白或 <= 本月
   // - scheduled/investment：一律排除
   const SCHEDULED_TYPES=['scheduled','investment'];
   const paidRecords=mr.filter(r=>{
-    const sm=r.settlement_month||'';
-    const bm=r.billing_month||'';
-    const pt=r.payment_type||'cash';
-    if(SCHEDULED_TYPES.includes(pt))return false;  // 定期/投資排除
-    if(pt==='credit_card'){
-      // 信用卡：優先用 settlement_month，沒有則退回 billing_month
-      const ref=sm||bm;
-      return ref && ref<=month;
-    }
-    // 現金/轉帳等：settlement_month 空白視為當下已付
-    if(!sm)return true;
-    return sm<=month;
-  });
-  const paidTotal=paidRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
-
-  // 次月預計：settlement_month = 下個月
-  const nextRecords=mr.filter(r=>{
-    const sm=r.settlement_month||'';
     const bm=r.billing_month||'';
     const pt=r.payment_type||'cash';
     if(SCHEDULED_TYPES.includes(pt))return false;
-    const ref=sm||(pt==='credit_card'?bm:'');
-    return ref===nmo;
+    if(pt==='credit_card') return bm && bm<=month;
+    if(!bm)return true;
+    return bm<=month;
+  });
+  const paidTotal=paidRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
+
+  // 次月預計：billing_month = 下個月
+  const nextRecords=mr.filter(r=>{
+    const bm=r.billing_month||'';
+    const pt=r.payment_type||'cash';
+    if(SCHEDULED_TYPES.includes(pt))return false;
+    return bm===nmo;
   });
   const nextTotal=nextRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
-  // 遠期預定：scheduled 類型，或 settlement_month > 下個月
+  // 遠期預定：scheduled 類型，或 billing_month > 下個月
   const farRecords=mr.filter(r=>{
-    const sm=r.settlement_month||'';
     const bm=r.billing_month||'';
     const pt=r.payment_type||'';
     if(SCHEDULED_TYPES.includes(pt))return true;
-    const ref=sm||bm;
-    return ref && ref > nmo;
+    return bm && bm > nmo;
   });
 
   // 最高單筆（全部本月消費）
@@ -492,7 +481,7 @@ function updateStats(){
 
   // 更新卡片
   document.getElementById('s-paid').textContent='$'+Math.round(paidTotal).toLocaleString();
-  document.getElementById('s-paid-sub').textContent=`${paidRecords.length} 筆｜settlement_month ≤ 本月`;
+  document.getElementById('s-paid-sub').textContent=`${paidRecords.length} 筆｜現金+本月結帳`;
 
   document.getElementById('s-next').textContent=nextTotal>0?'$'+Math.round(nextTotal).toLocaleString():'$0';
   const farNote=farRecords.length>0?`，另有 ${farRecords.length} 筆更遠期`:'';
