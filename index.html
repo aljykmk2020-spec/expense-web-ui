@@ -103,13 +103,13 @@ tr:hover .row-actions{opacity:1}
 
   <div class="main">
     <div class="stat-row">
-      <div class="stat-card" style="border-left:3px solid #1d9e75">
-        <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#1d9e75;display:inline-block"></span>本月已付</div>
+      <div class="stat-card" style="border-left:3px solid #1d9e75;cursor:pointer" onclick="filterByBilling('paid')" title="點擊查看明細">
+        <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#1d9e75;display:inline-block"></span>本月已付／應付 <span style="font-size:10px;color:#999">▼點擊篩選</span></div>
         <div class="stat-value" id="s-paid">—</div>
         <div class="stat-sub" id="s-paid-sub">billing_month ≤ 本月</div>
       </div>
-      <div class="stat-card" style="border-left:3px solid #ba7517">
-        <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#ba7517;display:inline-block"></span>次月預計</div>
+      <div class="stat-card" style="border-left:3px solid #ba7517;cursor:pointer" onclick="filterByBilling('next')" title="點擊查看明細">
+        <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#ba7517;display:inline-block"></span>次月預計 <span style="font-size:10px;color:#999">▼點擊篩選</span></div>
         <div class="stat-value" id="s-next">—</div>
         <div class="stat-sub" id="s-next-sub">billing_month = 下個月</div>
       </div>
@@ -307,13 +307,17 @@ function syncCategoryOptions(records){
 function buildMonthOptions(){
   const sel=document.getElementById('f-month');sel.innerHTML='';
   const now=new Date();
-  for(let i=0;i<12;i++){
+  const cur=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  // 未來6個月到過去12個月，共18個月
+  for(let i=-6;i<12;i++){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
     const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');
     const val=`${y}-${m}`;
     const opt=document.createElement('option');
-    opt.value=val;opt.textContent=`${d.getFullYear()}年${d.getMonth()+1}月`;
-    if(i===0)opt.selected=true;
+    opt.value=val;
+    const label=`${y}年${d.getMonth()+1}月`+(i<0?' (未來)':'');
+    opt.textContent=label;
+    if(val===cur)opt.selected=true;
     sel.appendChild(opt);
   }
 }
@@ -399,6 +403,32 @@ function nextMonth(ym){
   const [y,m]=ym.split('-').map(Number);
   const nd=new Date(y,m,1); // m 已是 1-based，Date month 是 0-based，所以 m=next
   return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
+}
+
+
+function filterByBilling(type){
+  const month=document.getElementById('f-month').value;
+  const nmo=nextMonth(month);
+  let subset;
+  if(type==='paid'){
+    subset=allRecords.filter(r=>{
+      if(parseMonthKey(r)!==month)return false;
+      const bm=r.billing_month||'';
+      return !bm||bm<=month;
+    });
+  } else {
+    subset=allRecords.filter(r=>{
+      if(parseMonthKey(r)!==month)return false;
+      return (r.billing_month||'')===nmo;
+    });
+  }
+  // 顯示明細：暫時覆蓋 filtered 讓 renderTable 用
+  filtered=subset;
+  currentPage=1;
+  renderTable();
+  // 提示
+  const label=type==='paid'?'本月已付／應付':'次月預計';
+  showToast(`顯示${label}的 ${subset.length} 筆明細，點重新整理回全部`);
 }
 
 function updateStats(){
