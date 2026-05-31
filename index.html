@@ -339,6 +339,11 @@ async function loadData(){
 }
 
 function parseMonthKey(r){
+  // 預定類：優先用 settlement_month，沒有則用 billing_month（付款月優先）
+  if(r.category==='預定'){
+    if(r.settlement_month&&r.settlement_month.match(/^\d{4}-\d{2}$/))return r.settlement_month;
+    if(r.billing_month&&r.billing_month.match(/^\d{4}-\d{2}$/))return r.billing_month;
+  }
   if(r.spending_month&&r.spending_month.match(/^\d{4}-\d{2}$/))return r.spending_month;
   const d=r.date||'';
   if(d.match(/^\d{4}-\d{2}/))return d.slice(0,7);
