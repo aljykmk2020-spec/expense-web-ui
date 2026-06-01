@@ -452,11 +452,14 @@ function updateStats(){
   // 本月已付／應付：用 billing_month 判斷
   // - credit_card：billing_month <= 本月
   // - cash/其他：billing_month 空白或 <= 本月
-  // - scheduled/investment：一律排除
+  // - scheduled/investment：一律排除，但「預定」類別且 settlement_month = 本月者納入
   const SCHEDULED_TYPES=['scheduled','investment'];
   const paidRecords=mr.filter(r=>{
     const bm=r.billing_month||'';
     const pt=r.payment_type||'cash';
+    const sm=r.settlement_month||'';
+    // 預定類別：settlement_month = 本月才納入應付
+    if(r.category==='預定') return sm===month;
     if(SCHEDULED_TYPES.includes(pt))return false;
     if(pt==='credit_card') return bm && bm<=month;
     if(!bm)return true;
