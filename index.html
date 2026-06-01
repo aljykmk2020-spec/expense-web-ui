@@ -421,6 +421,8 @@ function filterByBilling(type){
       if(parseMonthKey(r)!==month)return false;
       const bm=r.billing_month||'';
       const pt=r.payment_type||'cash';
+      const sm=r.settlement_month||'';
+      if(r.category==='預定')return sm===month;
       if(SCHED.includes(pt))return false;
       if(pt==='credit_card')return bm&&bm<=month;
       return !bm||bm<=month;
