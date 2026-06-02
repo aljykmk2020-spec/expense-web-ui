@@ -378,8 +378,9 @@ function renderTable(){
     const month=document.getElementById('f-month').value;
     const nmo=nextMonth(month);
     const bm=r.billing_month||'';
+    const sm=r.settlement_month||'';
     let billingBadge='';
-    if(bm===nmo){
+    if(bm===nmo||(bm===month&&sm===nmo)){
       billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#faeeda;color:#854f0b">次月付</span>`;
     } else if(bm && bm>nmo){
       billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#eeedfe;color:#534ab7">遠期</span>`;
