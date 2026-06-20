@@ -351,6 +351,59 @@ function parseMonthKey(r){
   return '';
 }
 
+// ── 付款月份判斷（統計卡片、badge、點擊明細共用）──
+// 消費月份（清單、趨勢圖、圓餅圖、本月消費筆數）仍使用 parseMonthKey，兩者刻意分開。
+function getPayableMonth(r){
+  const pt =(r.payment_type  ||'cash').trim();
+  const sm =(r.settlement_month||'').trim();
+  const bm =(r.billing_month   ||'').trim();
+  const spm=(r.spending_month  ||'').trim();
+  const d  =(r.date            ||'');
+  function fromDate(){
+    if(d.match(/^\d{4}-\d{2}/))return d.slice(0,7);
+    if(d.match(/^\d{4}\/\d{2}/))return d.slice(0,7).replace('/','-');
+    return '';
+  }
+  // scheduled（含 category=預定）：settlement_month → billing_month → spending_month → date
+  if(pt==='scheduled'||r.category==='預定'){
+    if(sm.match(/^\d{4}-\d{2}$/))return sm;
+    if(bm.match(/^\d{4}-\d{2}$/))return bm;
+    if(spm.match(/^\d{4}-\d{2}$/))return spm;
+    return fromDate();
+  }
+  // credit_card：優先 settlement_month（實際繳款月），fallback billing_month
+  if(pt==='credit_card'){
+    if(sm.match(/^\d{4}-\d{2}$/))return sm;
+    if(bm.match(/^\d{4}-\d{2}$/))return bm;
+    return '';
+  }
+  // investment：settlement_month → billing_month → spending_month → date
+  if(pt==='investment'){
+    if(sm.match(/^\d{4}-\d{2}$/))return sm;
+    if(bm.match(/^\d{4}-\d{2}$/))return bm;
+    if(spm.match(/^\d{4}-\d{2}$/))return spm;
+    return fromDate();
+  }
+  // cash / 即時支付：spending_month → date
+  if(spm.match(/^\d{4}-\d{2}$/))return spm;
+  return fromDate();
+}
+
+// ── 排除判斷（deleted + cancelled）──
+function isExcluded(r){
+  if((r.deleted+'').trim().toLowerCase()==='true')return true;
+  const st=(r.status+'').trim().toLowerCase();
+  return st==='cancelled'||st==='canceled'||st==='已取消';
+}
+
+// ── 遞延付款類型判斷（次月預計／遠期／badge 限用此類）──
+// cash／即時支付屬於當月消費當月付，不應出現在次月或遠期統計。
+function isDeferredPayment(r){
+  const pt=(r.payment_type||'').trim();
+  const cat=(r.category||'').trim();
+  return pt==='credit_card'||pt==='scheduled'||pt==='investment'||cat==='預定';
+}
+
 function applyFilters(){
   const month=document.getElementById('f-month').value;
   const cat=document.getElementById('f-cat').value;
@@ -374,16 +427,17 @@ function renderTable(){
   tbody.innerHTML=page.map(r=>{
     const bc='b-'+(r.category||'其他');
     const cardOrPay=r.card_name||(r.payment_type==='cash'?'現金':r.payment_type==='scheduled'?'定期':'刷卡');
-    // 計算 billing 標記
+    // 計算 billing 標記（僅遞延付款類型顯示，現金不顯示）
     const month=document.getElementById('f-month').value;
     const nmo=nextMonth(month);
-    const bm=r.billing_month||'';
-    const sm=r.settlement_month||'';
     let billingBadge='';
-    if(bm===nmo||(bm===month&&sm===nmo)){
-      billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#faeeda;color:#854f0b">次月付</span>`;
-    } else if(bm && bm>nmo){
-      billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#eeedfe;color:#534ab7">遠期</span>`;
+    if(isDeferredPayment(r)){
+      const pm=getPayableMonth(r);
+      if(pm===nmo){
+        billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#faeeda;color:#854f0b">次月付</span>`;
+      } else if(pm&&pm>nmo){
+        billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#eeedfe;color:#534ab7">遠期</span>`;
+      }
     }
     return`<tr>
       <td class="col-date" style="color:#666">${r.date?.slice(5)||''}</td>
@@ -416,29 +470,16 @@ function filterByBilling(type){
   const month=document.getElementById('f-month').value;
   const nmo=nextMonth(month);
   let subset;
-  const SCHED=['scheduled','investment'];
   if(type==='paid'){
-    subset=allRecords.filter(r=>{
-      if(parseMonthKey(r)!==month)return false;
-      const bm=r.billing_month||'';
-      const pt=r.payment_type||'cash';
-      const sm=r.settlement_month||'';
-      if(r.category==='預定')return sm===month;
-      if(SCHED.includes(pt))return false;
-      if(pt==='credit_card')return bm&&bm<=month;
-      return !bm||bm<=month;
-    });
+    // 本月已付／應付：不限付款類型，依 getPayableMonth 判斷（現金自然落在當月）
+    subset=allRecords.filter(r=>!isExcluded(r)&&getPayableMonth(r)===month);
   } else {
-    subset=allRecords.filter(r=>{
-      if(parseMonthKey(r)!==month)return false;
-      return (r.billing_month||'')===nmo;
-    });
+    // 次月預計：僅遞延付款類型（信用卡、scheduled、investment、預定）
+    subset=allRecords.filter(r=>!isExcluded(r)&&isDeferredPayment(r)&&getPayableMonth(r)===nmo);
   }
-  // 顯示明細：暫時覆蓋 filtered 讓 renderTable 用
   filtered=subset;
   currentPage=1;
   renderTable();
-  // 提示
   const label=type==='paid'?'本月已付／應付':'次月預計';
   showToast(`顯示${label}的 ${subset.length} 筆明細，點重新整理回全部`);
 }
@@ -449,45 +490,27 @@ function updateStats(){
   const nmo=nextMo;
   const [y,mo]=month.split('-');
 
-  // 本月消費記錄（以 spending_month / date 判斷，不管帳單月份）
-  const mr=allRecords.filter(r=>parseMonthKey(r)===month);
+  // ── 消費視角（parseMonthKey）：本月消費筆數、最高單筆、圓餅圖、趨勢圖用 ──
+  const mr=allRecords.filter(r=>!isExcluded(r)&&parseMonthKey(r)===month);
 
-  // 本月已付／應付：用 billing_month 判斷
-  // - credit_card：billing_month <= 本月
-  // - cash/其他：billing_month 空白或 <= 本月
-  // - scheduled/investment：一律排除，但「預定」類別且 settlement_month = 本月者納入
-  const SCHEDULED_TYPES=['scheduled','investment'];
-  const paidRecords=mr.filter(r=>{
-    const bm=r.billing_month||'';
-    const pt=r.payment_type||'cash';
-    const sm=r.settlement_month||'';
-    // 預定類別：settlement_month = 本月才納入應付
-    if(r.category==='預定') return sm===month;
-    if(SCHEDULED_TYPES.includes(pt))return false;
-    if(pt==='credit_card') return bm && bm<=month;
-    if(!bm)return true;
-    return bm<=month;
-  });
+  // ── 付款視角（getPayableMonth）：統計卡片用 ──
+  // 本月已付／應付：不限付款類型，現金依 spending_month 自然落在當月
+  const paidRecords=allRecords.filter(r=>!isExcluded(r)&&getPayableMonth(r)===month);
   const paidTotal=paidRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
-  // 次月預計：billing_month = 下個月
-  const nextRecords=mr.filter(r=>{
-    const bm=r.billing_month||'';
-    const pt=r.payment_type||'cash';
-    if(SCHEDULED_TYPES.includes(pt))return false;
-    return bm===nmo;
-  });
+  // 次月預計：僅遞延付款類型（信用卡、scheduled、investment、預定）
+  const nextRecords=allRecords.filter(r=>!isExcluded(r)&&isDeferredPayment(r)&&getPayableMonth(r)===nmo);
   const nextTotal=nextRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
-  // 遠期預定：scheduled 類型，或 billing_month > 下個月
-  const farRecords=mr.filter(r=>{
-    const bm=r.billing_month||'';
-    const pt=r.payment_type||'';
-    if(SCHEDULED_TYPES.includes(pt))return true;
-    return bm && bm > nmo;
+  // 更遠期：僅遞延付款類型，getPayableMonth > 次月
+  const farRecords=allRecords.filter(r=>{
+    if(isExcluded(r))return false;
+    if(!isDeferredPayment(r))return false;
+    const pm=getPayableMonth(r);
+    return pm&&pm>nmo;
   });
 
-  // 最高單筆（全部本月消費）
+  // 最高單筆（消費視角 mr）
   const maxR=mr.reduce((m,r)=>(Number(r.amount)||0)>(Number(m.amount)||0)?r:m,{});
 
   // 更新卡片
