@@ -57,6 +57,8 @@ tr:hover .row-actions{opacity:1}
 .confirm-dialog{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:20px;width:340px}
 .toast{position:fixed;bottom:20px;right:20px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:7px;box-shadow:0 4px 12px rgba(0,0,0,.1);opacity:0;transform:translateY(6px);transition:all .22s;pointer-events:none;z-index:300}
 .toast.show{opacity:1;transform:translateY(0)}
+.incomplete-banner{display:none;align-items:center;gap:8px;background:#fcebeb;border:1px solid #f7c1c1;color:#a32d2d;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px}
+.incomplete-banner.show{display:flex}
 .login-wrap{max-width:360px;margin:80px auto;padding:0 20px}
 .login-card{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:24px}
 .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:#1d9e75}
@@ -102,6 +104,10 @@ tr:hover .row-actions{opacity:1}
   </div>
 
   <div class="main">
+    <div class="incomplete-banner" id="data-incomplete-banner">
+      <i class="ti ti-alert-triangle"></i>
+      <span>資料載入不完整，統計暫停顯示。請點選重新整理再試一次。</span>
+    </div>
     <div class="stat-row">
       <div class="stat-card" style="border-left:3px solid #1d9e75;cursor:pointer" onclick="filterByBilling('paid')" title="點擊查看明細">
         <div class="stat-label" style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#1d9e75;display:inline-block"></span>本月已付／應付 <span style="font-size:10px;color:#999">▼點擊篩選</span></div>
@@ -260,6 +266,7 @@ tr:hover .row-actions{opacity:1}
 
 <div class="toast" id="toast"><i class="ti" id="toast-icon"></i><span id="toast-msg">完成</span></div>
 
+<script src="expense-data-loader.js"></script>
 <script>
 let API_BASE='',TOKEN='',allRecords=[],filtered=[],currentPage=1,editingId=null;
 const PER_PAGE=20;
@@ -322,20 +329,61 @@ function buildMonthOptions(){
   }
 }
 
+function clearIncompleteWarning(){
+  const banner=document.getElementById('data-incomplete-banner');
+  if(banner)banner.classList.remove('show');
+}
+
+// 資料載入不完整或失敗時：不寫入 allRecords、不呼叫 applyFilters()，
+// 並清掉畫面上舊的統計卡片／明細／圖表，避免使用者誤以為仍是最新完整資料。
+function showIncompleteWarning(){
+  const banner=document.getElementById('data-incomplete-banner');
+  if(banner)banner.classList.add('show');
+  allRecords=[];filtered=[];
+  document.getElementById('expense-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#a32d2d">資料載入不完整，暫停顯示明細</td></tr>';
+  ['s-paid','s-next','s-count','s-max'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});
+  document.getElementById('s-paid-sub').textContent='資料不完整';
+  document.getElementById('s-next-sub').textContent='資料不完整';
+  document.getElementById('s-month').textContent='—';
+  document.getElementById('s-max-desc').textContent='—';
+  document.getElementById('page-info').textContent='—';
+  const trendCanvas=document.getElementById('chart-trend');
+  if(trendCanvas){const ctx=trendCanvas.getContext('2d');if(ctx)ctx.clearRect(0,0,trendCanvas.width,trendCanvas.height);}
+  const pieCanvas=document.getElementById('chart-pie');
+  if(pieCanvas){const ctx=pieCanvas.getContext('2d');if(ctx)ctx.clearRect(0,0,pieCanvas.width,pieCanvas.height);}
+  const legend=document.getElementById('pie-legend');
+  if(legend)legend.innerHTML='';
+}
+
 async function loadData(){
+  clearIncompleteWarning();
   document.getElementById('expense-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#999">載入中...</td></tr>';
+  let result=null;
   try{
-    const r=await fetch(`${API_BASE}/api/expenses?per_page=500`,{headers:h()});
-    if(!r.ok)throw new Error(r.status);
-    const data=await r.json();
-    allRecords=data.records||[];
-    syncCategoryOptions(allRecords);
-    document.getElementById('conn-status').innerHTML='<span class="status-dot"></span>已連線';
-    applyFilters();
+    if(typeof ExpenseDataLoader==='undefined'||typeof ExpenseDataLoader.fetchAllExpensePages!=='function'){
+      throw new Error('ExpenseDataLoader is unavailable');
+    }
+    result=await ExpenseDataLoader.fetchAllExpensePages({
+      url:`${API_BASE}/api/expenses?per_page=500`,
+      headers:h(),
+      fetchImpl:window.fetch.bind(window),
+      maxPageRequests:ExpenseDataLoader.MAX_PAGE_REQUESTS,
+      idField:'record_id'
+    });
   }catch(e){
-    document.getElementById('conn-status').innerHTML='<span class="status-dot dot-err"></span>連線失敗';
-    document.getElementById('expense-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#a32d2d">無法連線，請點重新整理</td></tr>';
+    console.error('[loadData] loader 無法執行：',e&&e.message);
+    result=null;
   }
+  if(!result||!result.ok||!result.complete||!Array.isArray(result.records)){
+    if(result)console.error('[loadData] 資料載入不完整或失敗：',result.errorCode,result.message,result.diagnostic);
+    document.getElementById('conn-status').innerHTML='<span class="status-dot dot-err"></span>連線失敗';
+    showIncompleteWarning();
+    return;
+  }
+  allRecords=result.records;
+  syncCategoryOptions(allRecords);
+  document.getElementById('conn-status').innerHTML='<span class="status-dot"></span>已連線';
+  applyFilters();
 }
 
 function parseMonthKey(r){

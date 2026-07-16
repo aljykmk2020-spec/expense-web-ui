@@ -1,0 +1,7 @@
+{
+  "name": "expense-web-ui",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}
