@@ -248,7 +248,7 @@ tr:hover .row-actions{opacity:1}
     <div class="form-group"><label class="form-label">備註</label><input class="form-input" type="text" id="e-note" placeholder="選填"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('edit-modal')">取消</button>
-      <button class="btn btn-primary" onclick="saveRecord()"><i class="ti ti-device-floppy"></i> 儲存</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveRecord()"><i class="ti ti-device-floppy"></i> 儲存</button>
     </div>
   </div>
 </div>
@@ -267,9 +267,17 @@ tr:hover .row-actions{opacity:1}
 <div class="toast" id="toast"><i class="ti" id="toast-icon"></i><span id="toast-msg">完成</span></div>
 
 <script src="expense-data-loader.js"></script>
+<script src="expense-stats.js"></script>
 <script>
 let API_BASE='',TOKEN='',allRecords=[],filtered=[],currentPage=1,editingId=null;
 const PER_PAGE=20;
+// Codex 第七輪 P1-3：新增（POST）請求的 idempotency key 生命週期狀態。
+// 刻意只存在記憶體（不寫入 localStorage／console），頁面重新整理即消失。
+let saveIdempotencyKey=null,saveIdempotencyPayloadHash=null,saveInFlight=false;
+
+// DOM-free 統計／排除／idempotency 邏輯全部集中在 expense-stats.js（可獨立
+// 測試，見 test/expense-stats.test.js），這裡只取用，不得各自重寫一份。
+const {isExcluded,isDeferredPayment,isExpenseEligible,parseMonthKey,getPayableMonth,nextMonth,stableStringify,decideIdempotencyKey}=ExpenseStats;
 
 function init(){
   const s=localStorage.getItem('expense_config');
@@ -386,71 +394,8 @@ async function loadData(){
   applyFilters();
 }
 
-function parseMonthKey(r){
-  // 預定類：優先用 settlement_month，沒有則用 billing_month（付款月優先）
-  if(r.category==='預定'){
-    if(r.settlement_month&&r.settlement_month.match(/^\d{4}-\d{2}$/))return r.settlement_month;
-    if(r.billing_month&&r.billing_month.match(/^\d{4}-\d{2}$/))return r.billing_month;
-  }
-  if(r.spending_month&&r.spending_month.match(/^\d{4}-\d{2}$/))return r.spending_month;
-  const d=r.date||'';
-  if(d.match(/^\d{4}-\d{2}/))return d.slice(0,7);
-  if(d.match(/^\d{4}\/\d{2}/))return d.slice(0,7).replace('/','-');
-  return '';
-}
-
-// ── 付款月份判斷（統計卡片、badge、點擊明細共用）──
-// 消費月份（清單、趨勢圖、圓餅圖、本月消費筆數）仍使用 parseMonthKey，兩者刻意分開。
-function getPayableMonth(r){
-  const pt =(r.payment_type  ||'cash').trim();
-  const sm =(r.settlement_month||'').trim();
-  const bm =(r.billing_month   ||'').trim();
-  const spm=(r.spending_month  ||'').trim();
-  const d  =(r.date            ||'');
-  function fromDate(){
-    if(d.match(/^\d{4}-\d{2}/))return d.slice(0,7);
-    if(d.match(/^\d{4}\/\d{2}/))return d.slice(0,7).replace('/','-');
-    return '';
-  }
-  // scheduled（含 category=預定）：settlement_month → billing_month → spending_month → date
-  if(pt==='scheduled'||r.category==='預定'){
-    if(sm.match(/^\d{4}-\d{2}$/))return sm;
-    if(bm.match(/^\d{4}-\d{2}$/))return bm;
-    if(spm.match(/^\d{4}-\d{2}$/))return spm;
-    return fromDate();
-  }
-  // credit_card：優先 settlement_month（實際繳款月），fallback billing_month
-  if(pt==='credit_card'){
-    if(sm.match(/^\d{4}-\d{2}$/))return sm;
-    if(bm.match(/^\d{4}-\d{2}$/))return bm;
-    return '';
-  }
-  // investment：settlement_month → billing_month → spending_month → date
-  if(pt==='investment'){
-    if(sm.match(/^\d{4}-\d{2}$/))return sm;
-    if(bm.match(/^\d{4}-\d{2}$/))return bm;
-    if(spm.match(/^\d{4}-\d{2}$/))return spm;
-    return fromDate();
-  }
-  // cash / 即時支付：spending_month → date
-  if(spm.match(/^\d{4}-\d{2}$/))return spm;
-  return fromDate();
-}
-
-// ── 排除判斷（deleted + cancelled）──
-function isExcluded(r){
-  if((r.deleted+'').trim().toLowerCase()==='true')return true;
-  const st=(r.status+'').trim().toLowerCase();
-  return st==='cancelled'||st==='canceled'||st==='已取消';
-}
-
-// ── 遞延付款類型判斷（次月預計／遠期／badge 限用此類）──
-// cash／即時支付屬於當月消費當月付，不應出現在次月或遠期統計。
-function isDeferredPayment(r){
-  const pt=(r.payment_type||'').trim();
-  const cat=(r.category||'').trim();
-  return pt==='credit_card'||pt==='scheduled'||pt==='investment'||cat==='預定';
-}
+// parseMonthKey/getPayableMonth/isExcluded/isDeferredPayment/isExpenseEligible
+// 均來自 expense-stats.js（見本檔案開頭的解構賦值），此處不再重複定義。
 
 function applyFilters(){
   const month=document.getElementById('f-month').value;
@@ -506,24 +451,16 @@ function renderTable(){
   document.getElementById('btn-next').disabled=currentPage>=pages;
 }
 
-function nextMonth(ym){
-  // 傳入 "2026-05"，回傳 "2026-06"
-  const [y,m]=ym.split('-').map(Number);
-  const nd=new Date(y,m,1); // m 已是 1-based，Date month 是 0-based，所以 m=next
-  return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
-}
-
-
 function filterByBilling(type){
   const month=document.getElementById('f-month').value;
   const nmo=nextMonth(month);
   let subset;
   if(type==='paid'){
     // 本月已付／應付：不限付款類型，依 getPayableMonth 判斷（現金自然落在當月）
-    subset=allRecords.filter(r=>!isExcluded(r)&&getPayableMonth(r)===month);
+    subset=allRecords.filter(r=>isExpenseEligible(r)&&getPayableMonth(r)===month);
   } else {
     // 次月預計：僅遞延付款類型（信用卡、scheduled、investment、預定）
-    subset=allRecords.filter(r=>!isExcluded(r)&&isDeferredPayment(r)&&getPayableMonth(r)===nmo);
+    subset=allRecords.filter(r=>isExpenseEligible(r)&&isDeferredPayment(r)&&getPayableMonth(r)===nmo);
   }
   filtered=subset;
   currentPage=1;
@@ -539,20 +476,20 @@ function updateStats(){
   const [y,mo]=month.split('-');
 
   // ── 消費視角（parseMonthKey）：本月消費筆數、最高單筆、圓餅圖、趨勢圖用 ──
-  const mr=allRecords.filter(r=>!isExcluded(r)&&parseMonthKey(r)===month);
+  const mr=allRecords.filter(r=>isExpenseEligible(r)&&parseMonthKey(r)===month);
 
   // ── 付款視角（getPayableMonth）：統計卡片用 ──
   // 本月已付／應付：不限付款類型，現金依 spending_month 自然落在當月
-  const paidRecords=allRecords.filter(r=>!isExcluded(r)&&getPayableMonth(r)===month);
+  const paidRecords=allRecords.filter(r=>isExpenseEligible(r)&&getPayableMonth(r)===month);
   const paidTotal=paidRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
   // 次月預計：僅遞延付款類型（信用卡、scheduled、investment、預定）
-  const nextRecords=allRecords.filter(r=>!isExcluded(r)&&isDeferredPayment(r)&&getPayableMonth(r)===nmo);
+  const nextRecords=allRecords.filter(r=>isExpenseEligible(r)&&isDeferredPayment(r)&&getPayableMonth(r)===nmo);
   const nextTotal=nextRecords.reduce((s,r)=>s+(Number(r.amount)||0),0);
 
   // 更遠期：僅遞延付款類型，getPayableMonth > 次月
   const farRecords=allRecords.filter(r=>{
-    if(isExcluded(r))return false;
+    if(!isExpenseEligible(r))return false;
     if(!isDeferredPayment(r))return false;
     const pm=getPayableMonth(r);
     return pm&&pm>nmo;
@@ -594,7 +531,7 @@ function drawTrend(){
     const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');
     const key=`${y}-${m}`;
     months.push(`${d.getMonth()+1}月`);
-    const sum=allRecords.filter(r=>parseMonthKey(r)===key).reduce((s,r)=>s+(Number(r.amount)||0),0);
+    const sum=allRecords.filter(r=>isExpenseEligible(r)&&parseMonthKey(r)===key).reduce((s,r)=>s+(Number(r.amount)||0),0);
     totals.push(sum);
   }
   const W=canvas.width,H=canvas.height;
@@ -635,7 +572,7 @@ function drawPie(){
   if(!canvas)return;
   const ctx=canvas.getContext('2d');
   const month=document.getElementById('f-month').value;
-  const mr=allRecords.filter(r=>parseMonthKey(r)===month);
+  const mr=allRecords.filter(r=>isExpenseEligible(r)&&parseMonthKey(r)===month);
   const catMap={};
   mr.forEach(r=>{const c=r.category||'其他';catMap[c]=(catMap[c]||0)+(Number(r.amount)||0);});
   const entries=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
@@ -669,6 +606,9 @@ function changePage(d){const pages=Math.ceil(filtered.length/PER_PAGE);currentPa
 
 function openAddModal(){
   editingId=null;
+  // 開啟一個全新的「新增」動作視為新的 logical save，清除前一次（可能已放棄
+  // 的）idempotency key 狀態，避免殘留狀態造成混淆。
+  saveIdempotencyKey=null;saveIdempotencyPayloadHash=null;
   document.getElementById('modal-label').textContent='新增記帳';
   document.getElementById('e-date').value=new Date().toISOString().slice(0,10);
   ['e-amount','e-merchant','e-item','e-card','e-vendor','e-spending-month','e-billing-month','e-settlement-month','e-note'].forEach(id=>document.getElementById(id).value='');
@@ -709,17 +649,65 @@ function openEdit(id){
 }
 
 async function saveRecord(){
+  // Codex 第七輪 P1-3：request pending 時停用按鈕、禁止 double-click 重複送出。
+  if(saveInFlight)return;
+
   const date=document.getElementById('e-date').value;
   const amount=parseFloat(document.getElementById('e-amount').value);
   const merchant=document.getElementById('e-merchant').value.trim();
   const item=document.getElementById('e-item').value.trim();
   if(!date||!amount||(!merchant&&!item)){showToast('請填寫日期、金額，以及商家或品項','err');return;}
   const payload={date,amount,category:document.getElementById('e-cat').value,merchant,item,payment_type:document.getElementById('e-pay').value,card_name:document.getElementById('e-card').value.trim(),vendor:document.getElementById('e-vendor').value.trim(),spending_month:document.getElementById('e-spending-month').value,billing_month:document.getElementById('e-billing-month').value,settlement_month:document.getElementById('e-settlement-month').value,status:document.getElementById('e-status').value,note:document.getElementById('e-note').value.trim()};
+
+  const isCreate=!editingId;
+  const headers=h();
+  if(isCreate){
+    // 同一次使用者送出動作（含 timeout／ambiguous 後的自動或手動 retry）
+    // 必須沿用相同 idempotency key；一旦 payload 內容改變（含使用者在失敗
+    // 後修改了表單才又按儲存），視為全新 logical save，必須產生新 key，
+    // 否則會被後端判定為「同 key 不同內容」而回傳 409。邏輯集中在
+    // expense-stats.js 的 decideIdempotencyKey()，方便獨立測試。
+    const randomId=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():`${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const decision=decideIdempotencyKey(saveIdempotencyKey,saveIdempotencyPayloadHash,payload,randomId);
+    saveIdempotencyKey=decision.key;
+    saveIdempotencyPayloadHash=decision.payloadHash;
+    headers['Idempotency-Key']=saveIdempotencyKey;
+  }
+
+  saveInFlight=true;
+  const saveBtn=document.getElementById('btn-save');
+  if(saveBtn)saveBtn.disabled=true;
   try{
-    const r=await fetch(editingId?`${API_BASE}/api/expenses/${editingId}`:`${API_BASE}/api/expenses`,{method:editingId?'PUT':'POST',headers:h(),body:JSON.stringify(payload)});
-    if(!r.ok){const e=await r.json();showToast(e.details?.join('、')||e.error||'儲存失敗','err');return;}
+    const r=await fetch(editingId?`${API_BASE}/api/expenses/${editingId}`:`${API_BASE}/api/expenses`,{method:editingId?'PUT':'POST',headers,body:JSON.stringify(payload)});
+    if(!r.ok){
+      const e=await r.json().catch(()=>({}));
+      if(r.status===409){
+        // 這個 key 已被另一次不同內容的請求使用過，不可信任，清除後下次
+        // 送出一律產生新 key，避免永遠卡在同一個 409。
+        saveIdempotencyKey=null;saveIdempotencyPayloadHash=null;
+        showToast('這筆資料與先前一次未完成的送出發生衝突，請重新確認內容後再試一次','err');
+        return;
+      }
+      if(r.status===503){
+        // 伺服器端重複防護尚未就緒——payload 未變時保留同一 key，讓使用者
+        // 可以直接重按儲存進行安全重試。
+        showToast('伺服器重複寫入防護尚未就緒，請稍後再試一次','err');
+        return;
+      }
+      // 其他錯誤（驗證失敗等）：payload 未變時同樣保留同一 key 允許直接重試。
+      showToast(e.details?.join('、')||e.error||'儲存失敗','err');
+      return;
+    }
+    // 成功後清除 key——下一次「新增」是全新的 logical save。
+    saveIdempotencyKey=null;saveIdempotencyPayloadHash=null;
     closeModal('edit-modal');await loadData();showToast(editingId?'已儲存修改':'已新增記帳');
-  }catch(e){showToast('連線失敗','err');}
+  }catch(e){
+    // 連線層錯誤：payload 未變時保留同一 key，允許直接重試。
+    showToast('連線失敗','err');
+  }finally{
+    saveInFlight=false;
+    if(saveBtn)saveBtn.disabled=false;
+  }
 }
 
 function confirmDel(id){
