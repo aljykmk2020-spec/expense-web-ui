@@ -277,7 +277,7 @@ let saveIdempotencyKey=null,saveIdempotencyPayloadHash=null,saveInFlight=false;
 
 // DOM-free 統計／排除／idempotency 邏輯全部集中在 expense-stats.js（可獨立
 // 測試，見 test/expense-stats.test.js），這裡只取用，不得各自重寫一份。
-const {isExcluded,isDeferredPayment,isExpenseEligible,parseMonthKey,getPayableMonth,nextMonth,stableStringify,decideIdempotencyKey}=ExpenseStats;
+const {isExcluded,isDeferredPayment,isExpenseEligible,parseMonthKey,getPayableMonth,nextMonth,stableStringify,decideIdempotencyKey,isRecordEditable,LEGACY_UPGRADE_MESSAGE}=ExpenseStats;
 
 function init(){
   const s=localStorage.getItem('expense_config');
@@ -417,34 +417,13 @@ function renderTable(){
   const start=(currentPage-1)*PER_PAGE;
   const page=filtered.slice(start,start+PER_PAGE);
   if(!page.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:36px;color:#999">沒有符合條件的記錄</td></tr>';document.getElementById('page-info').textContent='共 0 筆';return;}
-  tbody.innerHTML=page.map(r=>{
-    const bc='b-'+(r.category||'其他');
-    const cardOrPay=r.card_name||(r.payment_type==='cash'?'現金':r.payment_type==='scheduled'?'定期':'刷卡');
-    // 計算 billing 標記（僅遞延付款類型顯示，現金不顯示）
-    const month=document.getElementById('f-month').value;
-    const nmo=nextMonth(month);
-    let billingBadge='';
-    if(isDeferredPayment(r)){
-      const pm=getPayableMonth(r);
-      if(pm===nmo){
-        billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#faeeda;color:#854f0b">次月付</span>`;
-      } else if(pm&&pm>nmo){
-        billingBadge=`<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#eeedfe;color:#534ab7">遠期</span>`;
-      }
-    }
-    return`<tr>
-      <td class="col-date" style="color:#666">${r.date?.slice(5)||''}</td>
-      <td class="col-cat"><span class="badge ${bc}">${esc(r.category||'')}</span></td>
-      <td class="col-merchant">${esc(r.merchant||r.item||'—')}</td>
-      <td class="col-item" style="color:#666">${esc(r.item||'—')}</td>
-      <td class="col-card" style="color:#666;font-size:12px">${esc(cardOrPay)}${billingBadge}</td>
-      <td class="col-amt"><span class="amount">$${Math.round(r.amount||0).toLocaleString()}</span></td>
-      <td class="col-act"><div class="row-actions">
-        <button class="icon-btn" onclick="openEdit('${r.record_id}')" title="編輯"><i class="ti ti-edit"></i></button>
-        <button class="icon-btn danger" onclick="confirmDel('${r.record_id}')" title="刪除"><i class="ti ti-trash"></i></button>
-      </div></td>
-    </tr>`;
-  }).join('');
+  // P2（Codex 第八輪 remediation）：每一列實際的 HTML 組裝邏輯（付款方式／
+  // transfer 顯示、legacy editable 判斷、billing badge）已搬到 expense-stats.js
+  // 的 buildExpenseRowHtml()，DOM-free、可獨立測試——這裡只負責算出目前篩
+  // 選月份對應的次月字串（唯一需要碰 DOM 的部分）再逐列呼叫它。
+  const month=document.getElementById('f-month').value;
+  const nmo=nextMonth(month);
+  tbody.innerHTML=page.map(r=>ExpenseStats.buildExpenseRowHtml(r,nmo)).join('');
   const total=filtered.length,pages=Math.ceil(total/PER_PAGE);
   document.getElementById('page-info').textContent=`第 ${start+1}–${Math.min(start+PER_PAGE,total)} 筆，共 ${total} 筆`;
   document.getElementById('btn-prev').disabled=currentPage<=1;
@@ -620,6 +599,9 @@ function openAddModal(){
 
 function openEdit(id){
   const r=allRecords.find(x=>x.record_id===id);if(!r)return;
+  // 防禦性檢查（P2）：即使按鈕理論上已被 renderTable() 隱藏，仍在這裡再擋
+  // 一次，避免任何其他呼叫路徑讓 legacy 資料送出後才在後端失敗。
+  if(!isRecordEditable(r)){showToast(LEGACY_UPGRADE_MESSAGE,'err');return;}
   editingId=id;
   document.getElementById('modal-label').textContent='編輯記帳';
   document.getElementById('e-date').value=r.date||'';
@@ -712,6 +694,7 @@ async function saveRecord(){
 
 function confirmDel(id){
   const r=allRecords.find(x=>x.record_id===id);if(!r)return;
+  if(!isRecordEditable(r)){showToast(LEGACY_UPGRADE_MESSAGE,'err');return;}
   document.getElementById('confirm-msg').textContent=`確定要刪除「${r.merchant||r.item||'這筆'} $${Math.round(r.amount||0).toLocaleString()}」嗎？`;
   document.getElementById('confirm-ok').onclick=()=>doDelete(id);
   document.getElementById('confirm-modal').classList.add('open');
@@ -734,7 +717,6 @@ function showToast(msg,type){
   document.getElementById('toast-msg').textContent=msg;
   t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);
 }
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 init();
 </script>
 </body>

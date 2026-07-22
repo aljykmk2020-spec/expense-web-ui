@@ -161,3 +161,90 @@ test('decideIdempotencyKey: key order in the payload object does not matter (sta
 test('stableStringify: distinguishes "100" (string) from 100 (number) -- not silently treated as equal', () => {
   assert.notEqual(stats.stableStringify({ amount: '100' }), stats.stableStringify({ amount: 100 }));
 });
+
+// ── P2 (Codex eighth-round remediation): legacy editable ──
+
+test('isRecordEditable: editable=true is editable', () => {
+  assert.equal(stats.isRecordEditable({ record_id: 'e1', editable: true }), true);
+});
+
+test('isRecordEditable: editable=false is not editable', () => {
+  assert.equal(stats.isRecordEditable({ record_id: 'e1', editable: false }), false);
+});
+
+test('isRecordEditable: missing editable field is conservatively treated as NOT editable', () => {
+  assert.equal(stats.isRecordEditable({ record_id: 'e1' }), false);
+});
+
+test('isRecordEditable: null/undefined record is not editable', () => {
+  assert.equal(stats.isRecordEditable(null), false);
+  assert.equal(stats.isRecordEditable(undefined), false);
+});
+
+// ── P2: transfer display (never falls back to 刷卡) ──
+
+test('paymentDisplayLabel: transfer with no card_name never displays 刷卡', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'transfer', payment_type: 'transfer', card_name: '', from_account: '台新銀行', to_account: '國泰銀行' });
+  assert.notEqual(label, '刷卡');
+});
+
+test('paymentDisplayLabel: transfer to a bank account displays 轉帳', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'transfer', from_account: '台新銀行', to_account: '國泰銀行' });
+  assert.equal(label, '轉帳');
+});
+
+test('paymentDisplayLabel: transfer to an e-wallet displays 儲值', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'transfer', from_account: '台新銀行', to_account: '悠遊付' });
+  assert.equal(label, '儲值');
+});
+
+test('paymentDisplayLabel: transfer to a credit card displays 信用卡繳款', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'transfer', from_account: '台新銀行', to_account: '玉山信用卡' });
+  assert.equal(label, '信用卡繳款');
+});
+
+test('paymentDisplayLabel: explicit transfer_subtype is used verbatim over the heuristic', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'transfer', transfer_subtype: 'topup', to_account: '任意字串' });
+  assert.equal(label, '儲值');
+});
+
+test('paymentDisplayLabel: ordinary credit_card expense with card_name displays the card name', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'expense', payment_type: 'credit_card', card_name: '玉山Unicard' });
+  assert.equal(label, '玉山Unicard');
+});
+
+test('paymentDisplayLabel: ordinary cash expense displays 現金', () => {
+  const label = stats.paymentDisplayLabel({ transaction_type: 'expense', payment_type: 'cash', card_name: '' });
+  assert.equal(label, '現金');
+});
+
+// ── P2: buildExpenseRowHtml() -- the ACTUAL renderTable() row-building
+// logic, not a reimplementation; index.html's renderTable() calls this
+// exact function per record. ──
+
+test('buildExpenseRowHtml: editable record renders edit/delete buttons, not the legacy note', () => {
+  const html = stats.buildExpenseRowHtml({ record_id: 'e1', editable: true, date: '2026-07-01', amount: 100, category: '餐飲', merchant: 'lunch', payment_type: 'cash', transaction_type: 'expense' }, '2026-08');
+  assert.match(html, /onclick="openEdit\('e1'\)"/);
+  assert.match(html, /onclick="confirmDel\('e1'\)"/);
+  assert.doesNotMatch(html, /legacy-upgrade-note/);
+});
+
+test('buildExpenseRowHtml: non-editable legacy record renders the upgrade note, not action buttons', () => {
+  const html = stats.buildExpenseRowHtml({ record_id: 'LEGACY-ROW-2', editable: false, date: '2026-07-01', amount: 100, category: '餐飲', merchant: 'lunch', payment_type: 'cash', transaction_type: 'expense' }, '2026-08');
+  assert.match(html, /legacy-upgrade-note/);
+  assert.match(html, /舊資料，需完成識別碼升級後才能修改/);
+  assert.doesNotMatch(html, /onclick="openEdit/);
+  assert.doesNotMatch(html, /onclick="confirmDel/);
+});
+
+test('buildExpenseRowHtml: transfer row never renders 刷卡', () => {
+  const html = stats.buildExpenseRowHtml({ record_id: 't1', editable: true, date: '2026-07-01', amount: 1000, category: '轉帳', merchant: '', transaction_type: 'transfer', from_account: '台新銀行', to_account: '國泰銀行' }, '2026-08');
+  assert.doesNotMatch(html, /刷卡/);
+  assert.match(html, /轉帳/);
+});
+
+test('buildExpenseRowHtml: merchant/item HTML-escapes untrusted content', () => {
+  const html = stats.buildExpenseRowHtml({ record_id: 'e1', editable: true, date: '2026-07-01', amount: 100, category: '餐飲', merchant: '<script>alert(1)</script>', payment_type: 'cash', transaction_type: 'expense' }, '2026-08');
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+});

@@ -134,6 +134,94 @@
     return { key: prevKey, payloadHash: payloadHash, isNewKey: false };
   }
 
+  // ── Legacy editable 判斷（P2，Codex 第八輪 remediation）──
+  // 後端 get_all_expenses()/_web_row_to_dict() 對每一筆記錄都會回傳
+  // editable（bool）：false 代表這筆資料的 record_id 是位置性的
+  // LEGACY-ROW-N 佔位識別碼（尚未經過 backfill_expense_record_ids()
+  // 升級），送出 PUT/DELETE 一定會被後端拒絕（UnstableRecordIdentityError）
+  // ——前端必須在使用者按下編輯／刪除「之前」就先隱藏或停用這兩個按鈕，
+  // 不能讓使用者填完表單送出後才收到錯誤。欄位缺失（例如舊版快取資料，
+  // 理論上不應發生，因為後端一律回傳這個欄位）時保守視為不可編輯，而不
+  // 是預設可編輯——寧可多一次「需升級」提示，也不要讓使用者送出後才失敗。
+  var LEGACY_UPGRADE_MESSAGE = '舊資料，需完成識別碼升級後才能修改';
+
+  function isRecordEditable(r) {
+    return !!r && r.editable === true;
+  }
+
+  // ── Transfer 顯示標籤（P2，Codex 第八輪 remediation）──
+  // transaction_type=transfer 的記錄本來就不會有 card_name（validate_
+  // transaction_record() 的 UNIVERSAL 規則禁止 transfer 帶 card_name），
+  // 舊版 renderTable() 的 cardOrPay 邏輯在 card_name 為空時一律 fallback
+  // 成「刷卡」，把每一筆轉帳／儲值／信用卡繳款都誤標成刷卡消費。
+  //
+  // 目前後端實際資料模型（見 LINE_INPUT_RULES.md 第 10 節／database.py
+  // EXPENSE_COLUMNS）尚未有獨立的 transfer_subtype 欄位——這裡優先讀取
+  // r.transfer_subtype（若未來後端新增則自動生效，不需要再改前端），
+  // 沒有時才退回用 to_account 內容做保守的字串比對，分不出來就一律顯示
+  // 通用的「轉帳」，絕不落回「刷卡」。
+  var KNOWN_TRANSFER_SUBTYPES = { transfer: '轉帳', topup: '儲值', credit_card_payment: '信用卡繳款' };
+
+  function transferDisplayLabel(r) {
+    if (r.transfer_subtype) {
+      return KNOWN_TRANSFER_SUBTYPES[r.transfer_subtype] || r.transfer_subtype;
+    }
+    var to = (r.to_account || '').trim();
+    if (/信用卡|卡$/.test(to)) return '信用卡繳款';
+    if (/悠遊付|Pay|錢包|付$/.test(to)) return '儲值';
+    return '轉帳';
+  }
+
+  function paymentDisplayLabel(r) {
+    if (!r) return '';
+    if (r.transaction_type === 'transfer') return transferDisplayLabel(r);
+    if (r.card_name) return r.card_name;
+    if (r.payment_type === 'cash') return '現金';
+    if (r.payment_type === 'scheduled') return '定期';
+    return '刷卡';
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ── 單筆交易列的 HTML（P2，Codex 第八輪 remediation）──
+  // renderTable() 過去把整段 <tr> 樣板直接寫在 index.html 的 DOM 程式碼裡，
+  // 無法獨立測試（只能靠手動點網頁）。移到這裡成為純函式，index.html 的
+  // renderTable() 現在直接呼叫這個函式組出每一列——測試呼叫的就是正式程式
+  // 碼本身，不是另一份重寫的邏輯。`nextMonthValue` 由呼叫端算好傳入（避免
+  // 這裡直接碰 DOM），對應目前篩選器選到的月份，用來判斷次月付／遠期 badge。
+  function buildExpenseRowHtml(r, nextMonthValue) {
+    var bc = 'b-' + (r.category || '其他');
+    var cardOrPay = paymentDisplayLabel(r);
+    var billingBadge = '';
+    if (isDeferredPayment(r)) {
+      var pm = getPayableMonth(r);
+      if (pm === nextMonthValue) {
+        billingBadge = '<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#faeeda;color:#854f0b">次月付</span>';
+      } else if (pm && pm > nextMonthValue) {
+        billingBadge = '<span style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:10px;background:#eeedfe;color:#534ab7">遠期</span>';
+      }
+    }
+    var actionsHtml;
+    if (isRecordEditable(r)) {
+      actionsHtml =
+        '<button class="icon-btn" onclick="openEdit(\'' + r.record_id + '\')" title="編輯"><i class="ti ti-edit"></i></button>' +
+        '<button class="icon-btn danger" onclick="confirmDel(\'' + r.record_id + '\')" title="刪除"><i class="ti ti-trash"></i></button>';
+    } else {
+      actionsHtml = '<span class="legacy-upgrade-note" title="' + escHtml(LEGACY_UPGRADE_MESSAGE) + '" style="color:#999;font-size:11px">' + escHtml(LEGACY_UPGRADE_MESSAGE) + '</span>';
+    }
+    return '<tr>' +
+      '<td class="col-date" style="color:#666">' + ((r.date || '').slice(5) || '') + '</td>' +
+      '<td class="col-cat"><span class="badge ' + bc + '">' + escHtml(r.category || '') + '</span></td>' +
+      '<td class="col-merchant">' + escHtml(r.merchant || r.item || '—') + '</td>' +
+      '<td class="col-item" style="color:#666">' + escHtml(r.item || '—') + '</td>' +
+      '<td class="col-card" style="color:#666;font-size:12px">' + escHtml(cardOrPay) + billingBadge + '</td>' +
+      '<td class="col-amt"><span class="amount">$' + Math.round(r.amount || 0).toLocaleString() + '</span></td>' +
+      '<td class="col-act"><div class="row-actions">' + actionsHtml + '</div></td>' +
+      '</tr>';
+  }
+
   return {
     isExcluded: isExcluded,
     isDeferredPayment: isDeferredPayment,
@@ -142,6 +230,11 @@
     getPayableMonth: getPayableMonth,
     nextMonth: nextMonth,
     stableStringify: stableStringify,
-    decideIdempotencyKey: decideIdempotencyKey
+    decideIdempotencyKey: decideIdempotencyKey,
+    isRecordEditable: isRecordEditable,
+    transferDisplayLabel: transferDisplayLabel,
+    paymentDisplayLabel: paymentDisplayLabel,
+    LEGACY_UPGRADE_MESSAGE: LEGACY_UPGRADE_MESSAGE,
+    buildExpenseRowHtml: buildExpenseRowHtml
   };
 });
